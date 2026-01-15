@@ -11,7 +11,7 @@ import CreativeCanvas from "@/components/canvas/CreativeCanvas";
 import dynamic from "next/dynamic";
 import { api } from "@/lib/api";
 
-const ProjectClient = dynamic(() => import("@/app/project/[id]/page"), { ssr: false });
+const ProjectClient = dynamic(() => import("@/components/project/ProjectClient"), { ssr: false });
 
 export default function Home() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -65,7 +65,7 @@ export default function Home() {
 
   // 如果是项目详情页，渲染项目详情组件
   if (currentView === 'project' && projectId) {
-    return <ProjectClient params={{ id: projectId }} />;
+    return <ProjectClient id={projectId} />;
   }
 
   return (

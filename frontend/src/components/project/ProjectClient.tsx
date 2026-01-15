@@ -25,7 +25,7 @@ import { useRouter } from "next/navigation";
 
 const CreativeCanvas = dynamic(() => import("@/components/canvas/CreativeCanvas"), { ssr: false });
 
-export default function ProjectClient({ params }: { params: { id: string } }) {
+export default function ProjectClient({ id }: { id: string }) {
     const router = useRouter();
     const [activeStep, setActiveStep] = useState("script");
     const [modelSettingsOpen, setModelSettingsOpen] = useState(false);
@@ -36,8 +36,8 @@ export default function ProjectClient({ params }: { params: { id: string } }) {
     const updateProject = useProjectStore((state) => state.updateProject);
 
     const handleBackToHome = () => {
-        // 使用 Next.js 路由返回主页
-        router.push('/');
+        // 使用 Hash 路由返回主页
+        window.location.hash = '';
     };
 
     const steps = [
@@ -53,8 +53,8 @@ export default function ProjectClient({ params }: { params: { id: string } }) {
     ];
 
     useEffect(() => {
-        selectProject(params.id);
-    }, [params.id, selectProject]);
+        selectProject(id);
+    }, [id, selectProject]);
 
     if (!currentProject) {
         return (

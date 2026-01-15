@@ -14,7 +14,7 @@ export default function ProjectCard({ project, onDelete }: ProjectCardProps) {
     const router = useRouter();
 
     const handleOpen = () => {
-        router.push(`/project/${project.id}`);
+        window.location.hash = `#/project/${project.id}`;
     };
 
     const handleDelete = (e: React.MouseEvent) => {
