@@ -15,13 +15,7 @@ export default function ConsistencyVault() {
     const currentProject = useProjectStore((state) => state.currentProject);
     const updateProject = useProjectStore((state) => state.updateProject);
 
-    // Global Style State
-    const styles = useProjectStore((state) => state.styles);
-    const selectedStyleId = useProjectStore((state) => state.selectedStyleId);
-    const setSelectedStyleId = useProjectStore((state) => state.setSelectedStyleId);
-    const updateStylePrompt = useProjectStore((state) => state.updateStylePrompt);
 
-    const [isEditingStyle, setIsEditingStyle] = useState(false);
 
     const [activeTab, setActiveTab] = useState<"character" | "scene" | "prop">("character");
 
@@ -81,8 +75,7 @@ export default function ConsistencyVault() {
         }
 
         try {
-            const currentStyle = styles.find(s => s.id === selectedStyleId);
-            const stylePrompt = currentStyle?.prompt;
+            const stylePrompt = currentProject?.art_direction?.style_config?.positive_prompt || "";
 
             console.log("[handleGenerate] Starting asset generation...");
 
@@ -91,7 +84,7 @@ export default function ConsistencyVault() {
                 currentProject.id,
                 assetId,
                 type,
-                selectedStyleId,
+                "ArtDirection",
                 stylePrompt,
                 generationType,
                 prompt,
@@ -400,13 +393,7 @@ export default function ConsistencyVault() {
                         <RefreshCw size={16} className="text-blue-400" />
                         <span className="text-sm font-bold">同步描述</span>
                     </button>
-                    <button
-                        onClick={() => setIsEditingStyle(true)}
-                        className="flex items-center gap-2 px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg transition-colors"
-                    >
-                        <Paintbrush size={16} className="text-primary" />
-                        <span className="text-sm font-bold">Global Style</span>
-                    </button>
+
                 </div>
             </div>
 
@@ -471,8 +458,8 @@ export default function ConsistencyVault() {
                             onUpdateDescription={(desc: string) => handleUpdateDescription(selectedAssetId, selectedAssetType, desc)}
                             onGenerate={(type: string, prompt: string, applyStyle: boolean, negativePrompt: string, batchSize: number) => handleGenerate(selectedAssetId, selectedAssetType, type, prompt, applyStyle, negativePrompt, batchSize)}
                             generatingTypes={getAssetGeneratingTypes(selectedAssetId)}
-                            stylePrompt={currentProject?.art_direction?.style_config?.positive_prompt || styles.find(s => s.id === selectedStyleId)?.prompt || ""}
-                            styleNegativePrompt={currentProject?.art_direction?.style_config?.negative_prompt || styles.find(s => s.id === selectedStyleId)?.negative_prompt || ""}
+                            stylePrompt={currentProject?.art_direction?.style_config?.positive_prompt || ""}
+                            styleNegativePrompt={currentProject?.art_direction?.style_config?.negative_prompt || ""}
                             onGenerateVideo={(prompt: string, duration: number, subType: string) => handleGenerateVideo(selectedAssetId, selectedAssetType, prompt, duration, subType)}
                             onDeleteVideo={(videoId: string) => handleDeleteVideo(selectedAssetId, selectedAssetType, videoId)}
                         />
@@ -487,8 +474,8 @@ export default function ConsistencyVault() {
                             onUpdateDescription={(desc: string) => handleUpdateDescription(selectedAssetId, selectedAssetType, desc)}
                             onGenerate={(applyStyle: boolean, negativePrompt: string, batchSize: number) => handleGenerate(selectedAssetId, selectedAssetType, "all", "", applyStyle, negativePrompt, batchSize)}
                             isGenerating={isAssetGenerating(selectedAssetId)}
-                            stylePrompt={currentProject?.art_direction?.style_config?.positive_prompt || styles.find(s => s.id === selectedStyleId)?.prompt || ""}
-                            styleNegativePrompt={currentProject?.art_direction?.style_config?.negative_prompt || styles.find(s => s.id === selectedStyleId)?.negative_prompt || ""}
+                            stylePrompt={currentProject?.art_direction?.style_config?.positive_prompt || ""}
+                            styleNegativePrompt={currentProject?.art_direction?.style_config?.negative_prompt || ""}
                             onGenerateVideo={(prompt: string, duration: number) => handleGenerateVideo(selectedAssetId, selectedAssetType, prompt, duration, "video")}
                             onDeleteVideo={(videoId: string) => handleDeleteVideo(selectedAssetId, selectedAssetType, videoId)}
                             isGeneratingVideo={getAssetGeneratingTypes(selectedAssetId).some((t: any) => t.type.startsWith("video"))}
@@ -497,22 +484,7 @@ export default function ConsistencyVault() {
                 )}
             </AnimatePresence>
 
-            {/* Style Editor Modal */}
-            <AnimatePresence>
-                {
-                    isEditingStyle && (
-                        <StyleEditorModal
-                            styles={styles}
-                            selectedStyleId={selectedStyleId}
-                            onClose={() => setIsEditingStyle(false)}
-                            onUpdate={(styleId: string, prompt: string) => {
-                                updateStylePrompt(styleId, prompt);
-                                setIsEditingStyle(false);
-                            }}
-                        />
-                    )
-                }
-            </AnimatePresence>
+
 
             {/* Create Asset Dialog */}
             <AnimatePresence>
@@ -724,7 +696,7 @@ function CharacterDetailModal({ asset, type, onClose, onUpdateDescription, onGen
                                             className="rounded border-gray-600 bg-gray-700 text-primary focus:ring-primary"
                                         />
                                         <label htmlFor="applyStyleModal" className="text-sm font-bold text-gray-300 cursor-pointer select-none">
-                                            Apply Global Style
+                                            Apply Art Direction Style
                                         </label>
                                     </div>
 
@@ -977,80 +949,7 @@ function AssetCard({ asset, type, isGenerating, onGenerate, onToggleLock, onClic
     );
 }
 
-function StyleEditorModal({ styles, selectedStyleId, onClose, onUpdate }: any) {
-    const style = styles.find((s: any) => s.id === selectedStyleId);
-    const [prompt, setPrompt] = useState(style?.prompt || "");
 
-    useEffect(() => {
-        setPrompt(style?.prompt || "");
-    }, [style]);
-
-    const handleSave = () => {
-        onUpdate(selectedStyleId, prompt);
-        onClose();
-    };
-
-    return (
-        <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-8">
-            <motion.div
-                initial={{ opacity: 0, scale: 0.95 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.95 }}
-                className="bg-[#1a1a1a] border border-white/10 rounded-2xl w-full max-w-2xl overflow-hidden shadow-2xl flex flex-col"
-            >
-                <div className="p-6 border-b border-white/10 flex justify-between items-center bg-black/20">
-                    <div className="flex items-center gap-3">
-                        <Paintbrush className="text-primary" size={20} />
-                        <div>
-                            <h2 className="text-xl font-bold text-white">Global Style Settings</h2>
-                            <p className="text-xs text-gray-400">Define the visual style for all assets</p>
-                        </div>
-                    </div>
-                    <button onClick={onClose} className="p-2 hover:bg-white/10 rounded-full text-gray-400 hover:text-white">
-                        <X size={20} />
-                    </button>
-                </div>
-
-                <div className="p-6 space-y-6">
-                    <div>
-                        <label className="text-xs font-bold text-gray-500 uppercase mb-2 block">Selected Style</label>
-                        <div className={`text-sm font-bold text-white bg-gradient-to-r ${style?.color} p-3 rounded-lg border border-white/10 shadow-lg inline-block`}>
-                            {style?.name}
-                        </div>
-                    </div>
-
-                    <div className="space-y-2">
-                        <label className="text-xs font-bold text-gray-500 uppercase block">Style Prompt</label>
-                        <textarea
-                            value={prompt}
-                            onChange={(e) => setPrompt(e.target.value)}
-                            className="w-full h-48 bg-black/40 border border-white/10 rounded-xl p-4 text-sm text-gray-300 resize-none focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/50 transition-all"
-                            placeholder="Describe the global style (e.g., lighting, art style, atmosphere)..."
-                        />
-                        <p className="text-xs text-gray-500">
-                            This prompt will be appended to all asset generation prompts to ensure consistency.
-                        </p>
-                    </div>
-                </div>
-
-                <div className="p-6 border-t border-white/10 bg-black/20 flex justify-end gap-3">
-                    <button
-                        onClick={onClose}
-                        className="px-4 py-2 text-sm font-medium text-gray-400 hover:text-white transition-colors"
-                    >
-                        Cancel
-                    </button>
-                    <button
-                        onClick={handleSave}
-                        className="px-6 py-2 bg-primary hover:bg-primary/90 text-white text-sm font-bold rounded-lg shadow-lg shadow-primary/20 transition-all"
-                    >
-                        Save Changes
-                    </button>
-                </div>
-            </motion.div>
-        </div>
-    );
-}
 
 function CreateAssetDialog({ type, onClose, onCreate }: { type: string; onClose: () => void; onCreate: (data: { name: string; description: string }) => void }) {
     const [name, setName] = useState("");

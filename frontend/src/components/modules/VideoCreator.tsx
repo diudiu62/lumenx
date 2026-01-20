@@ -133,7 +133,7 @@ export default function VideoCreator({ onTaskCreated, remixData, onRemixClear, p
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [submitSuccess, setSubmitSuccess] = useState(false);
     const [showCameraDropdown, setShowCameraDropdown] = useState(false);
-    const [polishedPrompt, setPolishedPrompt] = useState<string | null>(null);
+    const [polishedPrompt, setPolishedPrompt] = useState<{ cn: string; en: string } | null>(null);
     const [isPolishing, setIsPolishing] = useState(false);
 
     const handlePolish = async () => {
@@ -143,19 +143,18 @@ export default function VideoCreator({ onTaskCreated, remixData, onRemixClear, p
             let res;
             if (generationMode === 'r2v') {
                 // R2V mode: use R2V-specific polish with slot info
-                // Backend auto-generates character1/2/3 based on index
                 const slotInfo = castSlots
-                    .filter(slot => slot.url)  // Only include filled slots
+                    .filter(slot => slot.url)
                     .map((slot) => ({
                         description: slot.name || 'Unknown character'
                     }));
                 res = await api.polishR2VPrompt(prompt, slotInfo);
             } else {
-                // I2V mode: use existing polish
+                // I2V mode: use video polish
                 res = await api.polishVideoPrompt(prompt);
             }
-            if (res.polished_prompt) {
-                setPolishedPrompt(res.polished_prompt);
+            if (res.prompt_cn && res.prompt_en) {
+                setPolishedPrompt({ cn: res.prompt_cn, en: res.prompt_en });
             }
         } catch (error) {
             console.error("Polish failed", error);
@@ -927,43 +926,75 @@ export default function VideoCreator({ onTaskCreated, remixData, onRemixClear, p
                             />
                         </div>
 
-                        {/* Polished Result Display */}
+                        {/* Polished Result Display - Bilingual */}
                         <AnimatePresence>
                             {polishedPrompt && (
                                 <motion.div
                                     initial={{ opacity: 0, y: -10 }}
                                     animate={{ opacity: 1, y: 0 }}
                                     exit={{ opacity: 0, y: -10 }}
-                                    className="bg-purple-900/20 border border-purple-500/30 rounded-lg p-3 mt-2"
+                                    className="bg-purple-900/20 border border-purple-500/30 rounded-lg p-3 mt-2 space-y-3"
                                 >
-                                    <div className="flex justify-between items-start mb-2">
+                                    <div className="flex justify-between items-start">
                                         <span className="text-xs font-bold text-purple-400 flex items-center gap-1">
-                                            <Wand2 size={12} /> AI 建议 (AI Suggestion)
+                                            <Wand2 size={12} /> AI 双语润色
                                         </span>
-                                        <div className="flex gap-2">
+                                        <button
+                                            onClick={() => setPolishedPrompt(null)}
+                                            className="text-[10px] text-gray-400 hover:text-white"
+                                        >
+                                            ✕
+                                        </button>
+                                    </div>
+
+                                    {/* Chinese Prompt */}
+                                    <div className="space-y-1">
+                                        <div className="flex justify-between items-center">
+                                            <span className="text-[10px] font-bold text-gray-500 uppercase">中文 (预览)</span>
                                             <button
                                                 onClick={() => {
-                                                    navigator.clipboard.writeText(polishedPrompt);
-                                                    alert("已复制 (Copied)");
+                                                    navigator.clipboard.writeText(polishedPrompt.cn);
+                                                    alert("中文提示词已复制");
                                                 }}
-                                                className="text-[10px] text-gray-400 hover:text-white bg-black/20 px-2 py-1 rounded"
+                                                className="text-[10px] text-gray-400 hover:text-white bg-black/20 px-2 py-0.5 rounded"
                                             >
-                                                复制 (Copy)
-                                            </button>
-                                            <button
-                                                onClick={() => {
-                                                    setSegments([{ type: "text", value: polishedPrompt, id: `polished-${Date.now()}` }]);
-                                                    setPolishedPrompt(null); // Clear after applying
-                                                }}
-                                                className="text-[10px] text-white bg-purple-600 hover:bg-purple-500 px-2 py-1 rounded font-bold"
-                                            >
-                                                应用 (Apply)
+                                                复制
                                             </button>
                                         </div>
+                                        <p className="text-xs text-gray-300 leading-relaxed whitespace-pre-wrap bg-black/20 p-2 rounded">
+                                            {polishedPrompt.cn}
+                                        </p>
                                     </div>
-                                    <p className="text-xs text-gray-300 leading-relaxed whitespace-pre-wrap">
-                                        {polishedPrompt}
-                                    </p>
+
+                                    {/* English Prompt */}
+                                    <div className="space-y-1">
+                                        <div className="flex justify-between items-center">
+                                            <span className="text-[10px] font-bold text-gray-500 uppercase">English (生成用)</span>
+                                            <div className="flex gap-1">
+                                                <button
+                                                    onClick={() => {
+                                                        navigator.clipboard.writeText(polishedPrompt.en);
+                                                        alert("English prompt copied");
+                                                    }}
+                                                    className="text-[10px] text-gray-400 hover:text-white bg-black/20 px-2 py-0.5 rounded"
+                                                >
+                                                    Copy
+                                                </button>
+                                                <button
+                                                    onClick={() => {
+                                                        setSegments([{ type: "text", value: polishedPrompt.en, id: `polished-${Date.now()}` }]);
+                                                        setPolishedPrompt(null);
+                                                    }}
+                                                    className="text-[10px] text-white bg-purple-600 hover:bg-purple-500 px-2 py-0.5 rounded font-bold"
+                                                >
+                                                    应用
+                                                </button>
+                                            </div>
+                                        </div>
+                                        <p className="text-xs text-gray-300 leading-relaxed whitespace-pre-wrap bg-black/20 p-2 rounded font-mono">
+                                            {polishedPrompt.en}
+                                        </p>
+                                    </div>
                                 </motion.div>
                             )}
                         </AnimatePresence>

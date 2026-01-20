@@ -6,7 +6,7 @@ import {
     Layout, Image as ImageIcon, Box, Type, Move,
     ZoomIn, ZoomOut, Layers, Settings, Play,
     ChevronRight, ChevronLeft, Trash2, Copy, Wand2, Users, FileText, RefreshCw, Loader2, X, Lock, Unlock,
-    Plus, ArrowUp, ArrowDown
+    Plus, ArrowUp, ArrowDown, Zap
 } from "lucide-react";
 import { useProjectStore } from "@/store/projectStore";
 import { api, API_URL, crudApi } from "@/lib/api";
@@ -25,25 +25,38 @@ export default function StoryboardComposer() {
     const addRenderingFrame = useProjectStore((state) => state.addRenderingFrame);
     const removeRenderingFrame = useProjectStore((state) => state.removeRenderingFrame);
 
-    const [isReparsing, setIsReparsing] = useState(false);
+
+    const [isAnalyzing, setIsAnalyzing] = useState(false);  // NEW: Analyze storyboard loading state
     const [editingFrameId, setEditingFrameId] = useState<string | null>(null);
     const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
     const [insertIndex, setInsertIndex] = useState<number | null>(null);
 
-    const handleReparse = async () => {
-        if (!currentProject) return;
-        if (!confirm("Re-analyzing will overwrite current scenes, characters, and frames based on the text. Continue?")) return;
 
-        setIsReparsing(true);
+
+    // NEW: Analyze script text to generate storyboard frames
+    const handleAnalyzeToStoryboard = async () => {
+        if (!currentProject) return;
+
+        const text = currentProject.originalText;
+        if (!text || !text.trim()) {
+            alert("请先输入剧本文本");
+            return;
+        }
+
+        if (currentProject.frames?.length > 0) {
+            if (!confirm("这将覆盖当前的所有分镜帧。是否继续？")) return;
+        }
+
+        setIsAnalyzing(true);
         try {
-            const updatedProject = await api.reparseProject(currentProject.id, currentProject.originalText);
+            const updatedProject = await api.analyzeToStoryboard(currentProject.id, text);
             updateProject(currentProject.id, updatedProject);
-            alert("Script re-analyzed successfully!");
+            alert(`成功生成 ${updatedProject.frames?.length || 0} 个分镜帧！`);
         } catch (error) {
-            console.error("Reparse failed:", error);
-            alert("Failed to re-analyze script.");
+            console.error("Analyze to storyboard failed:", error);
+            alert("分镜生成失败，请查看控制台了解详情。");
         } finally {
-            setIsReparsing(false);
+            setIsAnalyzing(false);
         }
     };
 
@@ -245,15 +258,18 @@ export default function StoryboardComposer() {
                     <h3 className="font-bold text-sm flex items-center gap-2">
                         <FileText size={16} className="text-primary" /> Original Script
                     </h3>
-                    <button
-                        onClick={handleReparse}
-                        disabled={isReparsing}
-                        className="flex items-center gap-1 text-[10px] bg-white/10 hover:bg-white/20 px-2 py-1 rounded text-white transition-colors disabled:opacity-50"
-                        title="Re-extract entities from script"
-                    >
-                        <RefreshCw size={12} className={isReparsing ? "animate-spin" : ""} />
-                        {isReparsing ? "Analyzing..." : "Re-Analyze"}
-                    </button>
+                    <div className="flex items-center gap-2">
+                        <button
+                            onClick={handleAnalyzeToStoryboard}
+                            disabled={isAnalyzing}
+                            className="flex items-center gap-1 text-[10px] bg-primary/80 hover:bg-primary px-2 py-1 rounded text-white transition-colors disabled:opacity-50"
+                            title="从剧本生成分镜帧"
+                        >
+                            {isAnalyzing ? <Loader2 size={12} className="animate-spin" /> : <Zap size={12} />}
+                            {isAnalyzing ? "生成中..." : "⚡ 生成分镜"}
+                        </button>
+
+                    </div>
                 </div>
                 <div className="flex-1 p-4 overflow-hidden flex flex-col">
                     <textarea

@@ -3,6 +3,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from typing import Optional, Dict, List, Any
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
+from functools import partial
 import os
 import shutil
 import uuid
@@ -16,6 +19,9 @@ from ...utils import setup_logging
 from fastapi.responses import JSONResponse
 from dotenv import load_dotenv, set_key
 
+app = FastAPI(title="AI Comic Gen API")
+logger = logging.getLogger(__name__)
+
 # Setup logging to user directory
 setup_logging()
 
@@ -26,10 +32,8 @@ if os.path.exists(env_path):
     load_dotenv(env_path, override=True)
 
 # Debug: Print OSS configuration at startup
-print(f"STARTUP: OSS_ENDPOINT={os.getenv('OSS_ENDPOINT')}, OSS_BUCKET_NAME={os.getenv('OSS_BUCKET_NAME')}, OSS_BASE_PATH={os.getenv('OSS_BASE_PATH')}")
+logger.info(f"STARTUP: OSS_ENDPOINT={os.getenv('OSS_ENDPOINT')}, OSS_BUCKET_NAME={os.getenv('OSS_BUCKET_NAME')}, OSS_BASE_PATH={os.getenv('OSS_BASE_PATH')}")
 
-app = FastAPI(title="AI Comic Gen API")
-logger = logging.getLogger(__name__)
 
 
 app.add_middleware(
@@ -209,7 +213,13 @@ class CreateProjectRequest(BaseModel):
 @app.post("/projects", response_model=Script)
 async def create_project(request: CreateProjectRequest, skip_analysis: bool = False):
     """Creates a new project from a novel text."""
-    return signed_response(pipeline.create_project(request.title, request.text, skip_analysis=skip_analysis))
+    # Run in thread pool to avoid blocking event loop during LLM analysis (Python 3.8 compatible)
+    loop = asyncio.get_event_loop()
+    result = await loop.run_in_executor(
+        None,  # Use default executor
+        partial(pipeline.create_project, request.title, request.text, skip_analysis)
+    )
+    return signed_response(result)
 
 
 
@@ -221,7 +231,13 @@ class ReparseProjectRequest(BaseModel):
 async def reparse_project(script_id: str, request: ReparseProjectRequest):
     """Re-parses the text for an existing project, replacing all entities."""
     try:
-        return signed_response(pipeline.reparse_project(script_id, request.text))
+        # Run the blocking LLM call in a thread pool to avoid blocking the event loop (Python 3.8 compatible)
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(
+            None,  # Use default executor
+            partial(pipeline.reparse_project, script_id, request.text)
+        )
+        return signed_response(result)
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
@@ -284,7 +300,7 @@ def load_user_config():
                     if value:
                         os.environ[key] = value
             except Exception as e:
-                print(f"Warning: Failed to load config from {config_path}: {e}")
+                logger.warning(f"Failed to load config from {config_path}: {e}")
     # .env is already loaded at startup via dotenv
 
 
@@ -545,6 +561,57 @@ async def generate_motion_ref(script_id: str, request: GenerateMotionRefRequest,
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# === STORYBOARD DRAMATIZATION v2 ===
+
+class AnalyzeToStoryboardRequest(BaseModel):
+    """Request to analyze script text into storyboard frames."""
+    text: str
+
+
+@app.post("/projects/{script_id}/storyboard/analyze")
+async def analyze_to_storyboard(script_id: str, request: AnalyzeToStoryboardRequest):
+    """
+    Analyzes script text and generates storyboard frames using AI (Prompt B).
+    Replaces existing frames with newly generated ones.
+    """
+    try:
+        updated_script = pipeline.analyze_text_to_frames(script_id, request.text)
+        return signed_response(updated_script)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error in analyze_to_storyboard: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class RefinePromptRequest(BaseModel):
+    """Request to refine a frame's prompt using AI."""
+    frame_id: str
+    raw_prompt: str
+    assets: list = []  # List of asset references
+
+
+@app.post("/projects/{script_id}/storyboard/refine_prompt")
+async def refine_storyboard_prompt(script_id: str, request: RefinePromptRequest):
+    """
+    Refines a raw prompt into bilingual (CN/EN) prompts using AI (Prompt C).
+    Returns the refined prompts and optionally updates the frame.
+    """
+    try:
+        result = pipeline.refine_frame_prompt(
+            script_id, 
+            request.frame_id, 
+            request.raw_prompt, 
+            request.assets
+        )
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error in refine_storyboard_prompt: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.post("/projects/{script_id}/generate_storyboard", response_model=Script)
 async def generate_storyboard(script_id: str):
     """Triggers storyboard generation."""
@@ -601,7 +668,7 @@ async def process_video_task(script_id: str, task_id: str):
     try:
         pipeline.process_video_task(script_id, task_id)
     except Exception as e:
-        print(f"Error processing video task {task_id}: {e}")
+        logger.error(f"Error processing video task {task_id}: {e}")
 
 
 @app.post("/projects/{script_id}/video_tasks", response_model=List[VideoTask])
@@ -640,7 +707,7 @@ async def create_video_task(script_id: str, request: CreateVideoTaskRequest, bac
 
     except Exception as e:
         import traceback
-        traceback.print_exc()
+        logger.exception("An error occurred")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -1172,17 +1239,17 @@ async def merge_videos(script_id: str):
         return signed_response(merged_script)
     except ValueError as e:
         # Known validation errors (no videos, etc.)
-        print(f"[MERGE ERROR] Validation failed: {e}")
-        traceback.print_exc()
+        logger.error(f"[MERGE ERROR] Validation failed: {e}")
+        logger.exception("An error occurred")
         raise HTTPException(status_code=400, detail=str(e))
     except RuntimeError as e:
         # FFmpeg or processing errors
-        print(f"[MERGE ERROR] Runtime error: {e}")
-        traceback.print_exc()
+        logger.error(f"[MERGE ERROR] Runtime error: {e}")
+        logger.exception("An error occurred")
         raise HTTPException(status_code=500, detail=str(e))
     except Exception as e:
-        print(f"[MERGE ERROR] Unexpected error: {e}")
-        traceback.print_exc()
+        logger.error(f"[MERGE ERROR] Unexpected error: {e}")
+        logger.exception("An error occurred")
         raise HTTPException(status_code=500, detail=f"Merge failed: {str(e)}")
 
 
@@ -1208,15 +1275,19 @@ async def analyze_script_for_styles(script_id: str, request: AnalyzeStyleRequest
         if not script:
             raise HTTPException(status_code=404, detail="Script not found")
 
-        # Use LLM to analyze and recommend styles
-        recommendations = pipeline.script_processor.analyze_script_for_styles(request.script_text)
+        # Use LLM to analyze and recommend styles (run in thread pool to avoid blocking, Python 3.8 compatible)
+        loop = asyncio.get_event_loop()
+        recommendations = await loop.run_in_executor(
+            None,  # Use default executor
+            partial(pipeline.script_processor.analyze_script_for_styles, request.script_text)
+        )
 
         return {"recommendations": recommendations}
     except HTTPException:
         raise
     except Exception as e:
         import traceback
-        traceback.print_exc()
+        logger.exception("An error occurred")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -1236,7 +1307,7 @@ async def save_art_direction(script_id: str, request: SaveArtDirectionRequest):
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
         import traceback
-        traceback.print_exc()
+        logger.exception("An error occurred")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -1247,40 +1318,23 @@ async def get_style_presets():
         import json
         import os
         preset_file = os.path.join(os.path.dirname(__file__), "style_presets.json")
-        print(f"DEBUG: Loading presets from {preset_file}")
-        print(f"DEBUG: File exists: {os.path.exists(preset_file)}")
+        logger.debug(f"Loading presets from {preset_file}")
+        logger.debug(f"File exists: {os.path.exists(preset_file)}")
 
         if not os.path.exists(preset_file):
-            print("DEBUG: Preset file not found!")
+            logger.debug("DEBUG: Preset file not found!")
             return {"presets": []}
 
         with open(preset_file, 'r', encoding='utf-8') as f:
             data = json.load(f)
             return {"presets": data}
-
-        return {"presets": presets}
     except Exception as e:
         import traceback
-        traceback.print_exc()
+        logger.exception("An error occurred")
         raise HTTPException(status_code=500, detail=str(e))
 
 
-class PolishPromptRequest(BaseModel):
-    draft_prompt: str
-    assets: List[Dict[str, Any]]
-
-
-@app.post("/storyboard/polish_prompt")
-async def polish_prompt(request: PolishPromptRequest):
-    """Polishes a storyboard prompt using LLM."""
-    try:
-        processor = ScriptProcessor()
-        polished_prompt = processor.polish_storyboard_prompt(request.draft_prompt, request.assets)
-        return {"polished_prompt": polished_prompt}
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=str(e))
+# NOTE: /storyboard/polish_prompt removed - use /storyboard/refine_prompt instead
 
 
 class PolishVideoPromptRequest(BaseModel):
@@ -1289,14 +1343,17 @@ class PolishVideoPromptRequest(BaseModel):
 
 @app.post("/video/polish_prompt")
 async def polish_video_prompt(request: PolishVideoPromptRequest):
-    """Polishes a video generation prompt using LLM."""
+    """Polishes a video generation prompt using LLM. Returns bilingual prompts."""
     try:
         processor = ScriptProcessor()
-        polished_prompt = processor.polish_video_prompt(request.draft_prompt)
-        return {"polished_prompt": polished_prompt}
+        result = processor.polish_video_prompt(request.draft_prompt)
+        return {
+            "prompt_cn": result.get("prompt_cn", ""),
+            "prompt_en": result.get("prompt_en", "")
+        }
     except Exception as e:
         import traceback
-        traceback.print_exc()
+        logger.exception("An error occurred")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -1311,16 +1368,18 @@ class PolishR2VPromptRequest(BaseModel):
 
 @app.post("/video/polish_r2v_prompt")
 async def polish_r2v_prompt(request: PolishR2VPromptRequest):
-    """Polishes a R2V (Reference-to-Video) prompt using LLM with character slot information."""
+    """Polishes a R2V (Reference-to-Video) prompt using LLM. Returns bilingual prompts."""
     try:
         processor = ScriptProcessor()
-        # Convert slots to dict format for LLM
         slot_info = [{"description": s.description} for s in request.slots]
-        polished_prompt = processor.polish_r2v_prompt(request.draft_prompt, slot_info)
-        return {"polished_prompt": polished_prompt}
+        result = processor.polish_r2v_prompt(request.draft_prompt, slot_info)
+        return {
+            "prompt_cn": result.get("prompt_cn", ""),
+            "prompt_en": result.get("prompt_en", "")
+        }
     except Exception as e:
         import traceback
-        traceback.print_exc()
+        logger.exception("An error occurred")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -1378,7 +1437,7 @@ async def save_env_config(config: EnvConfig):
         return {"message": "Configuration saved successfully"}
     except Exception as e:
         import traceback
-        traceback.print_exc()
+        logger.exception("An error occurred")
         raise HTTPException(status_code=500, detail=str(e))
 
 

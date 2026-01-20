@@ -1,34 +1,20 @@
 import json
 import os
-from typing import List, Dict, Any
 import time
 import uuid
-
-# Placeholder for actual LLM client (e.g., dashscope or openai)
-# from dashscope import Generation
-
-from .models import Script, Character, Scene, Prop, StoryboardFrame, GenerationStatus
-
-class ScriptProcessor:
-    def __init__(self, api_key: str = None):
-        self.api_key = api_key or os.getenv("DASHSCOPE_API_KEY")
-        # self.model = "qwen-plus"
-
-    def parse_novel(self, title: str, text: str) -> Script:
-        """
-        Parses the raw novel text into a structured Script object using an LLM.
-        """
 import logging
 import traceback
+import re
+from typing import List, Dict, Any
 
-logger = logging.getLogger(__name__)
+from .models import Script, Character, Scene, Prop, StoryboardFrame, GenerationStatus
+from ...utils import get_logger
 
-# ... (imports)
+logger = get_logger(__name__)
 
 class ScriptProcessor:
     def __init__(self, api_key: str = None):
-        pass
-        # self.model = "qwen-plus"
+        self._api_key = api_key
 
     @property
     def api_key(self):
@@ -62,7 +48,7 @@ class ScriptProcessor:
             
             if response.status_code == 200:
                 content = response.output.choices[0].message.content
-                logger.info(f"LLM Response Content:\n{content}")
+                logger.debug(f"LLM Response Content:\n{content}")
                 
                 # Clean up markdown code blocks if present
                 if "```json" in content:
@@ -331,19 +317,24 @@ class ScriptProcessor:
 
     def _construct_prompt(self, text: str) -> str:
         """
-        Constructs the system prompt for the LLM.
+        Prompt A: Entity Extractor
+        Constructs the system prompt for extracting characters, scenes, and props ONLY.
+        Frames are generated separately via analyze_to_storyboard (Prompt B).
         """
         return f"""
         You are a professional storyboard artist and scriptwriter.
         Analyze the following novel text and extract structured data for a comic/video production.
         
-        IMPORTANT: All descriptive content (names, descriptions, actions, dialogue) MUST be in CHINESE (Simplified Chinese).
+        IMPORTANT: 
+        - All descriptive content (names, descriptions) MUST be in CHINESE (Simplified Chinese).
+        - Extract ONLY characters, scenes, and props.
         
         Output strictly in valid JSON format with the following structure:
         {{
             "characters": [
                 {{
-                    "name": "Character Name (e.g. 'Su Yueyao', 'Su Yueyao (Wedding)')",
+                    "id": "char_001",
+                    "name": "Character Name (e.g. '叶墨', '叶墨 (古装)')",
                     "description": "Visual description (hair, eyes, build, distinct features). DO NOT include specific facial expressions (e.g. sad, angry) or temporary actions (e.g. running, crying). Focus on permanent physical traits.",
                     "age": "Age estimate (e.g. '25')",
                     "gender": "Gender",
@@ -353,26 +344,17 @@ class ScriptProcessor:
             ],
             "scenes": [
                 {{
-                    "name": "Location Name (e.g. 'Coffee Shop', 'Ancient Ruins')",
+                    "id": "scene_001",
+                    "name": "Location Name (e.g. '咖啡店', '古代遗迹')",
                     "description": "Visual description (lighting, mood, key elements)",
                     "visual_weight": 3
                 }}
             ],
             "props": [
                 {{
+                    "id": "prop_001",
                     "name": "Prop Name",
                     "description": "Visual description"
-                }}
-            ],
-            "frames": [
-                {{
-                    "action_description": "What happens in this shot",
-                    "dialogue": "Speaker: Content (or null if none)",
-                    "camera_angle": "Shot type (e.g. 'Wide Shot', 'Close Up', 'Low Angle')",
-                    "camera_movement": "Camera movement (e.g. 'Pan Left', 'Zoom In', 'Static')",
-                    "characters": ["Name 1", "Name 2"], // Names must match character list
-                    "props": ["Prop Name"], // Names must match prop list
-                    "scene": "Location Name" // Must match a scene name
                 }}
             ]
         }}
@@ -446,8 +428,7 @@ CRITICAL STYLE GUIDELINES:
             
             if response.status_code == 200:
                 content = response.output.choices[0].message.content
-                print(f"DEBUG: Full LLM Response ({len(content)} chars):\n{content}\n-------------------")
-                logger.info(f"Style Analysis Response:\n{content}")
+                logger.debug(f"Style Analysis Response:\n{content}")
                 
                 # Clean up markdown code blocks if present
                 if "```json" in content:
@@ -514,7 +495,7 @@ CRITICAL STYLE GUIDELINES:
                         logger.error(f"Failed to recover JSON: {inner_e}")
                         # Last resort: try to parse partially using regex for fields
                         try:
-                            logger.info("Attempting regex extraction of fields...")
+                            logger.debug("Attempting regex extraction of fields...")
                             recommendations = []
                             # Regex to find style objects - improved to be non-greedy and handle newlines
                             style_matches = re.finditer(r'\{\s*"name":\s*"(.*?)",\s*"description":\s*"(.*?)".*?\}', content, re.DOTALL)
@@ -587,14 +568,173 @@ CRITICAL STYLE GUIDELINES:
                 "is_custom": False
             }
         ]
-    def polish_storyboard_prompt(self, draft_prompt: str, assets: List[Dict[str, Any]]) -> str:
+    
+    def analyze_to_storyboard(self, text: str, entities_json: Dict[str, Any]) -> List[Dict[str, Any]]:
         """
-        Polishes the storyboard prompt using Qwen-Plus, incorporating asset references.
+        Analyzes script text and generates storyboard frames using Prompt B (Storyboard Director).
+        Returns a list of frame dictionaries with visual atoms.
         """
-        logger.info(f"Polishing prompt: {draft_prompt}")
+        logger.info(f"Analyzing text to storyboard: {text[:100]}...")
         
         if not self.api_key:
-             return draft_prompt
+            logger.warning("DASHSCOPE_API_KEY not set. Returning mock frames.")
+            return self._mock_storyboard_frames(text)
+        
+        # Build entities context
+        characters_list = entities_json.get("characters", [])
+        scenes_list = entities_json.get("scenes", [])
+        props_list = entities_json.get("props", [])
+        
+        entities_str = f"""
+Characters:
+{json.dumps(characters_list, ensure_ascii=False, indent=2)}
+
+Scenes:
+{json.dumps(scenes_list, ensure_ascii=False, indent=2)}
+
+Props:
+{json.dumps(props_list, ensure_ascii=False, indent=2)}
+"""
+        
+        system_prompt = f"""
+# 角色
+你是一名电影级的分镜师（Storyboard Artist）和导演。你的任务是将剧本文本拆解为可供 AI 视频模型生成的一系列精细分镜帧。
+
+# 任务目标
+不仅仅是提取文本，而是要进行**视觉化拆解**。你需要将剧本中的文字转化为一系列连续的、单一动作的视觉画面。
+
+# 剧本格式说明
+剧本遵循以下格式：
+- **场景标题行**: `1-1 地点名称 [时间] [内/外]` 
+- **人物行**: `人物： 角色名1，角色名2`
+- **动作描述**: 以 `△` 开头，描述画面中发生的动作
+- **对话**: `角色名（情绪）： 对话内容`，或 `角色名 (V.O.)：` 表示画外音
+
+# 已提取的实体上下文
+{entities_str}
+
+# 核心规则 (CRITICAL)
+1. **视觉节拍拆解 (VISUAL ATOMIZATION)**:
+   - 如果一行动作描述包含多个连续动作，**必须**将其拆分为多个分镜帧。
+   - 每个分镜只应包含一个清晰的主要动作，时长控制在 3-5 秒。
+2. **合并动作描述 (MERGE ACTION)**:
+   - **`action_description` 字段必须包含画面中发生的所有动态要素**。
+   - 包括：人物的神态/微表情 + 肢体动作 + 道具的物理运动（如手机震动、烟雾缭绕）。
+   - 不要遗漏非人物主体的动作（如“车门打开”、“杯子摔碎”）。
+
+3. **角色可见性**:
+   - `character_ref_names` 只列出**当前分镜画面中可见**的角色。
+
+4. **实体约束**: 
+   - 场景名、角色名、道具名必须严格匹配"已提取的实体"。
+
+5. **语言**: 所有输出必须使用简体中文。
+
+# 输出格式
+返回一个包含 `frames` 数组的 JSON 对象。不要包含 Markdown 格式标记（如 ```json）。
+
+{{
+    "frames": [
+        {{
+            "scene_ref_name": "卧室",
+            "character_ref_names": ["叶墨"],
+            "prop_ref_names": ["手机"],
+            "visual_atmosphere": "昏暗的卧室，窗外透进冷色调月光",
+            "action_description": "手机在床头柜上疯狂震动。叶墨眉头紧锁，烦躁地翻身，肩膀挤压枕头产生形变",
+            "shot_size": "中景",
+            "camera_angle": "俯视",
+            "camera_movement": "静止",
+            "dialogue": "妈，这才几点啊！",
+            "speaker": "叶墨"
+        }},
+        {{
+            "scene_ref_name": "卧室",
+            "character_ref_names": ["叶墨"],
+            "prop_ref_names": [],
+            "visual_atmosphere": "昏暗的卧室",
+            "action_description": "被子滑落，叶墨猛地坐起，一脸惊恐",
+            "shot_size": "特写",
+            "camera_angle": "平视",
+            "camera_movement": "快速推镜头",
+            "dialogue": "已经来了？",
+            "speaker": "叶墨"
+        }}
+    ]
+}}
+
+# 剧本内容
+{text}
+"""
+
+        try:
+            import dashscope
+            dashscope.api_key = self.api_key
+            
+            response = dashscope.Generation.call(
+                model='qwen-max',
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": "请开始生成分镜帧列表，确保覆盖剧本中的所有内容。"}
+                ],
+                result_format='message',
+                # response_format={'type': 'json_object'} # Removed to allow freer generation
+            )
+            
+            if response.status_code == 200:
+                content = response.output.choices[0].message.content.strip()
+                logger.debug(f"Storyboard Analysis Raw Response: {content[:500]}...")
+                
+                # Parse JSON
+                if "```json" in content:
+                    content = content.split("```json")[1].split("```")[0]
+                elif "```" in content:
+                    content = content.split("```")[1].split("```")[0]
+                
+                try:
+                    result = json.loads(content.strip())
+                    frames = result.get("frames", [])
+                    logger.info(f"Storyboard Analysis generated {len(frames)} frames")
+                    return frames
+                except json.JSONDecodeError as e:
+                    logger.error(f"Failed to parse storyboard analysis JSON: {e}")
+                    return self._mock_storyboard_frames(text)
+            else:
+                logger.error(f"LLM Call Failed: {response.code} - {response.message}")
+                return self._mock_storyboard_frames(text)
+                
+        except Exception as e:
+            logger.error(f"Error in storyboard analysis: {e}", exc_info=True)
+            return self._mock_storyboard_frames(text)
+    
+    def _mock_storyboard_frames(self, text: str) -> List[Dict[str, Any]]:
+        """Returns mock storyboard frames for testing when API is unavailable."""
+        return [
+            {
+                "scene_ref_name": "卧室",
+                "character_ref_names": ["叶墨"],
+                "prop_ref_names": ["手机"],
+                "visual_atmosphere": "昏暗的卧室，窗外透进冷色调月光",
+                "character_acting": "叶墨眉头紧锁，眼神迷离",
+                "key_action_physics": "手机在柜上剧烈震动",
+                "shot_size": "中景",
+                "camera_angle": "平视",
+                "camera_movement": "Static",
+                "dialogue": None,
+                "speaker": None
+            }
+        ]
+
+    def polish_storyboard_prompt(self, draft_prompt: str, assets: List[Dict[str, Any]]) -> Dict[str, str]:
+        """
+        Polishes the storyboard prompt using Qwen-Plus, incorporating asset references.
+        Returns a dict with 'prompt_cn' and 'prompt_en'.
+        """
+        logger.debug(f"Polishing prompt: {draft_prompt}")
+        
+        fallback_result = {"prompt_cn": draft_prompt, "prompt_en": draft_prompt}
+        
+        if not self.api_key:
+             return fallback_result
 
         # Construct context about assets
         asset_context = []
@@ -607,33 +747,43 @@ CRITICAL STYLE GUIDELINES:
             
         context_str = "\n".join(asset_context)
         
-        system_prompt = f"""You are an expert storyboard artist and prompt engineer. Your task is to rewrite a draft prompt into a high-quality image generation prompt, specifically for a multi-reference image workflow.
+        system_prompt = f"""
+# ROLE
+You are an expert storyboard artist and prompt engineer. Your task is to rewrite a draft prompt into a high-quality image generation prompt, specifically for a multi-reference image workflow.
 
-CONTEXT:
+# CONTEXT:
 The user has selected specific reference images (assets) to compose a scene.
 You must refer to these assets by their Image ID (e.g., "Image 1", "Image 2") when describing them in the prompt.
 
-AVAILABLE ASSETS:
+# AVAILABLE ASSETS:
 {context_str}
 
-RULES:
+# RULES:
 1.  **Integrate Assets**: Explicitly mention "Image X" when describing the corresponding character, scene, or prop.
 2.  **Natural Flow**: Do not just concatenate. Write a coherent sentence or paragraph describing the visual scene.
-3.  **Enhance Detail**: Add visual details (lighting, atmosphere, emotion) based on the draft prompt, but keep the asset references clear.
-4.  **No Explanations**: Return ONLY the polished prompt text.
+3.  **Strict Adherence**: DO NOT hallucinate emotions, actions, or plot details not present in the draft. If the draft says "sitting", do NOT add "sadly" or "happily" unless specified. Keep the narrative neutral and accurate.
+4.  **Enhance Detail**: Add visual details (lighting, atmosphere, emotion) based on the draft prompt, but keep the asset references clear.
+5.  **No Explanations**: Return ONLY the polished prompt text.
+6.  **Bilingual Output**: 
+    - **Prompt CN**: Fluent Chinese, strictly following the content of the draft.
+    - **Prompt EN**: Natural English description, prioritizing visual atmosphere.
 
-EXAMPLES:
+# OUTPUT FORMAT
+Return STRICTLY a JSON object:
+{{
+    "prompt_cn": "Chinese description with Image X references...",
+    "prompt_en": "English cinematic description with Image X references..."
+}}
 
-Input: Old man (Image 2) casting spell in front of barrier (Image 1).
-Output: The old man in Image 2 stands in front of the barrier in Image 1, eyes closed tight, brows furrowed, hands clasped at his chest, fully focused on casting a spell. His whole body is surrounded by yellow sword energy.
+# EXAMPLES
+**Input Draft**: Boy (Image 1) sitting on hospital bed (Image 2).
+**Output**:
+{{
+    "prompt_cn": "图像1中的男孩坐在图像2的病床边缘。病房内光线柔和，自然光从侧面照射在男孩身上，勾勒出真实的轮廓。画面构图稳定，质感写实。",
+    "prompt_en": "The boy from Image 1 is seated on the edge of the hospital bed in Image 2. Soft natural light illuminates the scene from the side, highlighting the fabric textures of the bedding and the realistic skin tone of the boy. Cinematic composition, high resolution, photorealistic."
+}}
 
-Input: Boy (Image 1) sitting on hospital bed (Image 2).
-Output: The boy from Image 1 sits on the edge of the hospital bed in Image 2, hands resting at his sides, looking down at the floor, appearing lost and overwhelmed.
-
-Input: Street scene (Image 1) with robot (Image 2) walking.
-Output: The scene in Image 1 is filled with smoke. In the distance of the street, the silhouette of the robot from Image 2 appears, walking towards the camera.
-
-DRAFT PROMPT:
+# USER DRAFT PROMPT
 {draft_prompt}
 """
 
@@ -645,25 +795,47 @@ DRAFT PROMPT:
                 model='qwen-plus',
                 prompt=system_prompt,
                 result_format='message',
+                response_format={'type': 'json_object'}
             )
             
             if response.status_code == 200:
                 content = response.output.choices[0].message.content.strip()
-                logger.info(f"Polished Prompt: {content}")
-                return content
+                logger.debug(f"Polished Prompt Raw: {content}")
+                
+                # Parse JSON response
+                if "```json" in content:
+                    content = content.split("```json")[1].split("```")[0]
+                elif "```" in content:
+                    content = content.split("```")[1].split("```")[0]
+                
+                try:
+                    result = json.loads(content.strip())
+                    if "prompt_cn" in result and "prompt_en" in result:
+                        logger.debug(f"Polished Prompt CN: {result['prompt_cn'][:100]}...")
+                        logger.debug(f"Polished Prompt EN: {result['prompt_en'][:100]}...")
+                        return result
+                    else:
+                        logger.warning("LLM response missing prompt_cn or prompt_en")
+                        return fallback_result
+                except json.JSONDecodeError as e:
+                    logger.error(f"Failed to parse polish response JSON: {e}")
+                    return fallback_result
             else:
                 logger.error(f"LLM Call Failed: {response.code} - {response.message}")
-                return draft_prompt
+                return fallback_result
                 
         except Exception as e:
             logger.error(f"Error polishing prompt: {e}", exc_info=True)
-            return draft_prompt
-    def polish_video_prompt(self, draft_prompt: str) -> str:
+            return fallback_result
+    def polish_video_prompt(self, draft_prompt: str) -> Dict[str, str]:
         """
         Polishes a video generation prompt using Qwen-Plus.
+        Returns bilingual prompts {prompt_cn, prompt_en}.
         """
+        fallback = {"prompt_cn": draft_prompt, "prompt_en": draft_prompt}
+        
         if not self.api_key:
-            return f"Polished: {draft_prompt} (Mock)"
+            return fallback
 
         system_prompt = """You are an expert video prompt engineer. Your task is to optimize a draft prompt for an Image-to-Video generation model.
 
@@ -677,11 +849,16 @@ EXAMPLES:
 
 *   **Zoom Out**: "A soft, round animated character with a curious expression wakes up to find their bed is a giant golden corn kernel. Camera zooms out to reveal the room is a massive corn silo, with echoes reverberating, corn kernels piled high like walls, and a beam of warm sunlight streaming from a high window, casting long shadows."
 *   **Pan Left**: "Camera pans left, slowly sweeping across a luxury store window filled with glamorous models and expensive goods. The camera continues panning left, leaving the window to reveal a ragged homeless man shivering in the corner of the adjacent alley."
-*   **Orbit**: "Backlit, medium shot, sunset, soft light, silhouette, center composition. Orbit camera movement. The camera follows the character from back to front, revealing a rugged cowboy clutching a holster, eyes scanning a desolate western ghost town. He wears worn brown leather, a bullet belt, and a low hat brim, his silhouette softened by the sunset. Behind him are dilapidated wooden buildings with broken windows and scattered glass, dust swirling in the wind. The camera slowly orbits from his back to his front, with light spilling from behind, creating strong dramatic contrast and a warm, desolate atmosphere."
 
 TASK:
 Rewrite the following draft prompt into a high-quality video generation prompt following the guidelines above.
-Return ONLY the polished prompt text.
+
+OUTPUT FORMAT:
+Return STRICTLY a JSON object:
+{
+    "prompt_cn": "润色后的中文视频提示词，关注运动和镜头",
+    "prompt_en": "Polished English video prompt, focusing on motion and camera"
+}
 """
 
         try:
@@ -694,27 +871,48 @@ Return ONLY the polished prompt text.
                     {'role': 'system', 'content': system_prompt},
                     {'role': 'user', 'content': draft_prompt}
                 ],
-                result_format='message'
+                result_format='message',
+                response_format={'type': 'json_object'}
             )
 
             if response.status_code == 200:
-                return response.output.choices[0].message.content.strip()
+                content = response.output.choices[0].message.content.strip()
+                logger.debug(f"Video Prompt Polish Raw: {content[:200]}...")
+                
+                # Parse JSON
+                if "```json" in content:
+                    content = content.split("```json")[1].split("```")[0]
+                elif "```" in content:
+                    content = content.split("```")[1].split("```")[0]
+                
+                try:
+                    result = json.loads(content.strip())
+                    if "prompt_cn" in result and "prompt_en" in result:
+                        return result
+                    else:
+                        logger.warning("Video polish missing bilingual keys")
+                        return fallback
+                except json.JSONDecodeError as e:
+                    logger.error(f"Failed to parse video polish JSON: {e}")
+                    return fallback
             else:
                 logger.error(f"DashScope API Error: {response.code} - {response.message}")
-                raise Exception(f"DashScope API Error: {response.message}")
+                return fallback
 
-        except Exception as e:
-            logger.error(f"Failed to polish video prompt: {e}")
-            traceback.print_exc()
-            raise e
+        except Exception:
+            logger.exception("Failed to polish video prompt")
+            return fallback
 
-    def polish_r2v_prompt(self, draft_prompt: str, slots: List[Dict[str, str]]) -> str:
+    def polish_r2v_prompt(self, draft_prompt: str, slots: List[Dict[str, str]]) -> Dict[str, str]:
         """
         Polishes a R2V (Reference-to-Video) prompt using Qwen-Plus.
         R2V requires explicit character references using character1, character2, character3 tags.
+        Returns bilingual prompts {prompt_cn, prompt_en}.
         """
+        fallback = {"prompt_cn": draft_prompt, "prompt_en": draft_prompt}
+        
         if not self.api_key:
-            return f"Polished: {draft_prompt} (Mock)"
+            return fallback
 
         # Build slot context - using character1/2/3 format
         slot_context = []
@@ -743,21 +941,22 @@ Rewrite the user's input prompt into a structured format strictly following thes
 4. **PRESERVE**: Keep the original intent and emotional tone.
 5. **ENHANCE**: Add visual details for dramatic effect (lighting, speed descriptors like "slowly", "rapidly").
 
-# Output Rules
-- Return ONLY the polished prompt text.
-- Do NOT include any explanations or meta-text.
-- Write in English for better model compatibility.
-- Keep the prompt concise but descriptive (50-150 words optimal).
+# Output Format
+Return STRICTLY a JSON object:
+{{
+    "prompt_cn": "润色后的中文提示词，使用 character1/character2/character3 格式",
+    "prompt_en": "Polished English prompt using character1/character2/character3 format"
+}}
 
 # Examples
 
 INPUT: 主角从门里跳出来说话
 SLOTS: character1 = "White rabbit", character2 = "Robot dog"
-OUTPUT: character1 bursts through the door with an exaggerated jump, landing energetically with ears perked up. The room is dimly lit with warm ambient light streaming through dusty windows. character1 looks around excitedly and says: "I made it just in time!" Camera follows the jump with a slight tilt.
-
-INPUT: 两个角色在街上对峙
-SLOTS: character1 = "Warrior in armor", character2 = "Dark mage"
-OUTPUT: Under dramatic stormy skies, character1 stands in the middle of a cobblestone street, sword drawn, facing character2 who hovers slightly with dark energy swirling around their hands. The wind howls as they lock eyes. character1 takes a slow, deliberate step forward. Static camera with tension-building composition.
+OUTPUT:
+{{
+    "prompt_cn": "character1 从门里猛然跳出，落地时耳朵竖起，充满活力。房间昏暗，温暖的光线从尘土飞扬的窗户中透入。character1 兴奋地环顾四周说道：'我正好赶上了！' 镜头随着跳跃略微倾斜。",
+    "prompt_en": "character1 bursts through the door with an exaggerated jump, landing energetically with ears perked up. The room is dimly lit with warm ambient light streaming through dusty windows. character1 looks around excitedly and says: 'I made it just in time!' Camera follows the jump with a slight tilt."
+}}
 """
 
         try:
@@ -770,18 +969,34 @@ OUTPUT: Under dramatic stormy skies, character1 stands in the middle of a cobble
                     {'role': 'system', 'content': system_prompt},
                     {'role': 'user', 'content': draft_prompt}
                 ],
-                result_format='message'
+                result_format='message',
+                response_format={'type': 'json_object'}
             )
 
             if response.status_code == 200:
-                polished = response.output.choices[0].message.content.strip()
-                logger.info(f"R2V Polished Prompt: {polished}")
-                return polished
+                content = response.output.choices[0].message.content.strip()
+                logger.debug(f"R2V Polished Raw: {content[:200]}...")
+                
+                # Parse JSON
+                if "```json" in content:
+                    content = content.split("```json")[1].split("```")[0]
+                elif "```" in content:
+                    content = content.split("```")[1].split("```")[0]
+                
+                try:
+                    result = json.loads(content.strip())
+                    if "prompt_cn" in result and "prompt_en" in result:
+                        return result
+                    else:
+                        logger.warning("R2V polish missing bilingual keys")
+                        return fallback
+                except json.JSONDecodeError as e:
+                    logger.error(f"Failed to parse R2V polish JSON: {e}")
+                    return fallback
             else:
                 logger.error(f"DashScope API Error: {response.code} - {response.message}")
-                raise Exception(f"DashScope API Error: {response.message}")
+                return fallback
 
-        except Exception as e:
-            logger.error(f"Failed to polish R2V prompt: {e}")
-            traceback.print_exc()
-            raise e
+        except Exception:
+            logger.exception("Failed to polish R2V prompt")
+            return fallback

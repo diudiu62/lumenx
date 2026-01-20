@@ -21,12 +21,9 @@ import ModelSettingsModal from "@/components/common/ModelSettingsModal";
 import EnvConfigDialog from "@/components/project/EnvConfigDialog";
 import dynamic from "next/dynamic";
 
-import { useRouter } from "next/navigation";
-
 const CreativeCanvas = dynamic(() => import("@/components/canvas/CreativeCanvas"), { ssr: false });
 
 export default function ProjectClient({ id }: { id: string }) {
-    const router = useRouter();
     const [activeStep, setActiveStep] = useState("script");
     const [modelSettingsOpen, setModelSettingsOpen] = useState(false);
     const [envDialogOpen, setEnvDialogOpen] = useState(false);

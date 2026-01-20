@@ -332,13 +332,7 @@ export const api = {
         return res.data;
     },
 
-    polishPrompt: async (draftPrompt: string, assets: any[]) => {
-        const res = await axios.post(`${API_URL}/storyboard/polish_prompt`, {
-            draft_prompt: draftPrompt,
-            assets: assets
-        });
-        return res.data;
-    },
+    // NOTE: polishPrompt removed - use refineFramePrompt for storyboard prompts
     polishVideoPrompt: async (draftPrompt: string) => {
         const res = await axios.post(`${API_URL}/video/polish_prompt`, {
             draft_prompt: draftPrompt
@@ -406,6 +400,32 @@ export const api = {
             composition_data: compositionData,
             prompt: prompt,
             batch_size: batchSize
+        });
+        return res.data;
+    },
+
+    // === STORYBOARD DRAMATIZATION v2 ===
+
+    /**
+     * Analyzes script text and generates storyboard frames using AI.
+     * Replaces existing frames with newly generated ones.
+     */
+    analyzeToStoryboard: async (scriptId: string, text: string) => {
+        const res = await axios.post(`${API_URL}/projects/${scriptId}/storyboard/analyze`, {
+            text: text
+        });
+        return res.data;
+    },
+
+    /**
+     * Refines a raw prompt into bilingual (CN/EN) prompts using AI.
+     * Returns { prompt_cn, prompt_en, frame_updated }.
+     */
+    refineFramePrompt: async (scriptId: string, frameId: string, rawPrompt: string, assets: any[] = []) => {
+        const res = await axios.post(`${API_URL}/projects/${scriptId}/storyboard/refine_prompt`, {
+            frame_id: frameId,
+            raw_prompt: rawPrompt,
+            assets: assets
         });
         return res.data;
     },

@@ -99,6 +99,13 @@ class ComicGenPipeline:
         new_script.created_at = existing_script.created_at
         new_script.updated_at = time.time()
         
+        # Preserve project-level settings
+        new_script.art_direction = existing_script.art_direction
+        new_script.model_settings = existing_script.model_settings
+        new_script.style_preset = existing_script.style_preset
+        new_script.style_prompt = existing_script.style_prompt
+        new_script.merged_video_url = existing_script.merged_video_url
+        
         # Replace the script in memory
         self.scripts[script_id] = new_script
         self._save_data()
@@ -743,6 +750,124 @@ class ComicGenPipeline:
         self._save_data()
         return script
 
+    # === STORYBOARD DRAMATIZATION v2 ===
+
+    def analyze_text_to_frames(self, script_id: str, text: str) -> Script:
+        """
+        Analyzes script text and generates storyboard frames using LLM.
+        Replaces existing frames with newly generated ones.
+        """
+        script = self.scripts.get(script_id)
+        if not script:
+            raise ValueError("Script not found")
+        
+        logger.info(f"Analyzing text to frames for project {script_id}")
+        
+        # Build entities JSON from existing characters, scenes, props
+        entities_json = {
+            "characters": [{"id": c.id, "name": c.name, "description": c.description} for c in script.characters],
+            "scenes": [{"id": s.id, "name": s.name, "description": s.description} for s in script.scenes],
+            "props": [{"id": p.id, "name": p.name, "description": p.description} for p in script.props],
+        }
+        
+        # Call LLM to analyze text
+        raw_frames = self.script_processor.analyze_to_storyboard(text, entities_json)
+        
+        # Convert raw frame dicts to StoryboardFrame objects
+        new_frames = []
+        for idx, frame_data in enumerate(raw_frames):
+            # Resolve scene ID by name
+            scene_ref_name = frame_data.get("scene_ref_name", "")
+            scene_id = None
+            for scene in script.scenes:
+                if scene.name == scene_ref_name or scene_ref_name in scene.name:
+                    scene_id = scene.id
+                    break
+            if not scene_id and script.scenes:
+                scene_id = script.scenes[0].id  # Fallback to first scene
+            elif not scene_id:
+                scene_id = str(uuid.uuid4())  # Generate a placeholder ID
+            
+            # Resolve character IDs by names
+            char_ref_names = frame_data.get("character_ref_names", [])
+            character_ids = []
+            for char_name in char_ref_names:
+                for char in script.characters:
+                    if char.name == char_name or char_name in char.name:
+                        character_ids.append(char.id)
+                        break
+            
+            # Resolve prop IDs by names
+            prop_ref_names = frame_data.get("prop_ref_names", [])
+            prop_ids = []
+            for prop_name in prop_ref_names:
+                for prop in script.props:
+                    if prop.name == prop_name or prop_name in prop.name:
+                        prop_ids.append(prop.id)
+                        break
+            
+            frame = StoryboardFrame(
+                id=str(uuid.uuid4()),
+                scene_id=scene_id,
+                character_ids=character_ids,
+                prop_ids=prop_ids,
+                # Action description - now a unified field combining character acting and physics
+                action_description=frame_data.get("action_description", ""),
+                # Visual atmosphere
+                visual_atmosphere=frame_data.get("visual_atmosphere"),
+                # Camera parameters
+                shot_size=frame_data.get("shot_size"),
+                camera_angle=frame_data.get("camera_angle", "平视"),
+                camera_movement=frame_data.get("camera_movement"),
+                # Dialogue
+                dialogue=frame_data.get("dialogue"),
+                speaker=frame_data.get("speaker"),
+                # Status
+                status=GenerationStatus.PENDING
+            )
+            new_frames.append(frame)
+        
+        # Replace existing frames with new ones
+        script.frames = new_frames
+        script.updated_at = time.time()
+        
+        logger.info(f"Generated {len(new_frames)} frames from text analysis")
+        self._save_data()
+        return script
+
+    def refine_frame_prompt(self, script_id: str, frame_id: str, raw_prompt: str, assets: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """
+        Refines a raw prompt into bilingual (CN/EN) prompts using LLM.
+        Also updates the frame with the refined prompts.
+        """
+        script = self.scripts.get(script_id)
+        if not script:
+            raise ValueError("Script not found")
+        
+        logger.debug(f"Refining prompt for frame {frame_id}")
+        
+        # Call LLM to refine prompt
+        result = self.script_processor.polish_storyboard_prompt(raw_prompt, assets)
+        
+        # Find and update the frame
+        frame_found = False
+        for frame in script.frames:
+            if frame.id == frame_id:
+                frame.image_prompt_cn = result.get("prompt_cn")
+                frame.image_prompt_en = result.get("prompt_en")
+                frame.image_prompt = result.get("prompt_en")  # Also update legacy field
+                frame.updated_at = time.time()
+                frame_found = True
+                break
+        
+        if frame_found:
+            self._save_data()
+        
+        return {
+            "prompt_cn": result.get("prompt_cn"),
+            "prompt_en": result.get("prompt_en"),
+            "frame_updated": frame_found
+        }
 
     def generate_storyboard(self, script_id: str) -> Script:
         """Step 3: Generate storyboard images (Initial/Batch)."""
@@ -1097,7 +1222,7 @@ class ComicGenPipeline:
             i2i_model = script.model_settings.i2i_model
             logger.info(f"Rendering frame {frame_id} using model {i2i_model} with {len(ref_image_paths)} reference images")
             if len(ref_image_urls) > 0:
-                logger.info(f"Original reference URLs from frontend: {ref_image_urls}")
+                logger.debug(f"Original reference URLs from frontend: {ref_image_urls}")
 
             # Call generator
             self.storyboard_generator.generate_frame(
@@ -1122,7 +1247,7 @@ class ComicGenPipeline:
             # 2. Construct a composite image (ControlNet input)
             # 3. Call Img2Img with the composite + prompt
             
-            logger.info(f"Rendering frame {frame_id} with prompt: {prompt}")
+            logger.debug(f"Rendering frame {frame_id} with prompt: {prompt}")
             time.sleep(1.5) # Simulate processing
             
             # Mock Result
@@ -1296,8 +1421,8 @@ class ComicGenPipeline:
             )
             if version_result.returncode == 0:
                 version_line = version_result.stdout.split('\n')[0] if version_result.stdout else "Unknown"
-                logger.info(f"[MERGE] Using FFmpeg: {version_line}")
-                logger.info(f"[MERGE] FFmpeg path: {ffmpeg_path}")
+                logger.debug(f"[MERGE] Using FFmpeg: {version_line}")
+                logger.debug(f"[MERGE] FFmpeg path: {ffmpeg_path}")
             else:
                 logger.warning(f"[MERGE] Could not get FFmpeg version (exit code {version_result.returncode})")
         except Exception as e:
@@ -1312,7 +1437,7 @@ class ComicGenPipeline:
                 # Try to find a default completed video
                 default_video = next((v for v in script.video_tasks if v.frame_id == frame.id and v.status == "completed"), None)
                 if default_video and default_video.video_url:
-                    logger.info(f"[MERGE]   -> Using default video: {default_video.video_url}")
+                    logger.debug(f"[MERGE]   -> Using default video: {default_video.video_url}")
                     video_paths.append(default_video.video_url)
                 else:
                     logger.warning(f"[MERGE]   -> No video selected or available, skipping")
@@ -1320,7 +1445,7 @@ class ComicGenPipeline:
                 
             video = next((v for v in script.video_tasks if v.id == frame.selected_video_id), None)
             if video and video.video_url:
-                logger.info(f"[MERGE]   -> Selected video: {video.video_url}")
+                logger.debug(f"[MERGE]   -> Selected video: {video.video_url}")
                 video_paths.append(video.video_url)
             else:
                 logger.warning(f"[MERGE]   -> Selected video {frame.selected_video_id} not found or has no URL")
@@ -1343,7 +1468,7 @@ class ComicGenPipeline:
                     if os.path.exists(abs_path):
                         f.write(f"file '{abs_path}'\n")
                         abs_video_paths.append(abs_path)
-                        logger.info(f"[MERGE] Added to list: {abs_path}")
+                        logger.debug(f"[MERGE] Added to list: {abs_path}")
                     else:
                         logger.warning(f"[MERGE] Video file not found: {abs_path}")
                         
@@ -1358,13 +1483,13 @@ class ComicGenPipeline:
         output_path = os.path.join("output", "video", output_filename)
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
         
-        logger.info(f"[MERGE] Output path: {output_path}")
+        logger.debug(f"[MERGE] Output path: {output_path}")
         
         # Log video file details for debugging
         for i, path in enumerate(abs_video_paths):
             try:
                 size_mb = os.path.getsize(path) / (1024 * 1024)
-                logger.info(f"[MERGE] Input video {i+1}: {os.path.basename(path)} ({size_mb:.2f} MB)")
+                logger.debug(f"[MERGE] Input video {i+1}: {os.path.basename(path)} ({size_mb:.2f} MB)")
             except Exception as e:
                 logger.warning(f"[MERGE] Could not get size for video {i+1}: {e}")
         
@@ -1385,12 +1510,12 @@ class ComicGenPipeline:
             output_path
         ]
         
-        logger.info(f"[MERGE] Running FFmpeg command: {' '.join(cmd)}")
-        logger.info(f"[MERGE] Platform: {platform.system()} {platform.release()}")
+        logger.debug(f"[MERGE] Running FFmpeg command: {' '.join(cmd)}")
+        logger.debug(f"[MERGE] Platform: {platform.system()} {platform.release()}")
         
         try:
             result = subprocess.run(cmd, check=True, capture_output=True, timeout=600)  # 10 min timeout for re-encoding
-            logger.info(f"[MERGE] FFmpeg stdout: {result.stdout.decode()[:500] if result.stdout else 'empty'}")
+            logger.debug(f"[MERGE] FFmpeg stdout: {result.stdout.decode()[:500] if result.stdout else 'empty'}")
             logger.info(f"[MERGE] FFmpeg completed successfully")
             
             # Update script
@@ -1572,13 +1697,13 @@ class ComicGenPipeline:
         """Processes a video task."""
         script = self.get_script(script_id)
         if not script:
-            print(f"Script {script_id} not found for task {task_id}")
+            logger.error(f"Script {script_id} not found for task {task_id}")
             return
             
         task = next((t for t in script.video_tasks if t.id == task_id), None)
         
         if not task:
-            print(f"Task {task_id} not found in script {script_id}")
+            logger.error(f"Task {task_id} not found in script {script_id}")
             return
 
         try:
@@ -1650,8 +1775,8 @@ class ComicGenPipeline:
             
         except Exception as e:
             import traceback
-            traceback.print_exc()
-            print(f"Video generation failed: {e}")
+            logger.exception("Failed to process video task")
+            logger.error(f"Video generation failed: {e}")
             task.status = "failed"
             if task.asset_id:
                 self._sync_asset_video_task(script, task)

@@ -177,20 +177,32 @@ class StoryboardFrame(BaseModel):
     character_ids: List[str] = Field(default_factory=list, description="List of Character IDs present in the frame")
     prop_ids: List[str] = Field(default_factory=list, description="List of Prop IDs present in the frame")
     
-    action_description: str = Field(..., description="What is happening in this frame")
+    # Legacy fields (kept for compatibility)
+    action_description: str = Field("", description="What is happening in this frame (Legacy, use character_acting)")
     facial_expression: Optional[str] = Field(None, description="Specific facial expression")
     dialogue: Optional[str] = Field(None, description="Dialogue text content")
     speaker: Optional[str] = Field(None, description="Name of the speaker")
     
-    camera_angle: str = Field("Medium Shot", description="Camera angle/shot type")
+    # === NEW: Visual Atoms (Storyboard Dramatization v2) ===
+    visual_atmosphere: Optional[str] = Field(None, description="Environment atmosphere: lighting, mood, volumetric effects")
+    character_acting: Optional[str] = Field(None, description="Character performance: expression, body language, micro-details")
+    key_action_physics: Optional[str] = Field(None, description="Key action with physics: deformation, texture, motion details")
+    
+    # === Camera Parameters ===
+    shot_size: Optional[str] = Field(None, description="Shot size: 特写/近景/中景/全景/远景")
+    camera_angle: str = Field("Medium Shot", description="Camera angle/shot type (Legacy)")
     camera_movement: Optional[str] = Field(None, description="Camera movement")
     composition: Optional[str] = Field(None, description="Visual composition guide")
-    atmosphere: Optional[str] = Field(None, description="Mood of this specific shot")
+    atmosphere: Optional[str] = Field(None, description="Mood of this specific shot (Legacy, use visual_atmosphere)")
     
     # Composition Data (JSON structure for canvas)
     composition_data: Optional[Dict[str, Any]] = Field(None, description="JSON data representing the canvas composition")
     
-    image_prompt: Optional[str] = Field(None, description="Optimized prompt for T2I/I2I")
+    # === Prompts ===
+    image_prompt: Optional[str] = Field(None, description="Optimized prompt for T2I/I2I (Legacy)")
+    image_prompt_cn: Optional[str] = Field(None, description="Polished Chinese prompt for user confirmation")
+    image_prompt_en: Optional[str] = Field(None, description="Polished English prompt for Wan model generation")
+    
     image_url: Optional[str] = Field(None, description="URL of the generated storyboard image (Legacy)")
     image_asset: Optional[ImageAsset] = Field(default_factory=ImageAsset, description="Storyboard image asset container")
     rendered_image_url: Optional[str] = Field(None, description="URL of the high-fidelity rendered image (Legacy)")

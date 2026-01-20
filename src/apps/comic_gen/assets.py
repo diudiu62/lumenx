@@ -101,12 +101,12 @@ class AssetGenerator:
                             ref_url = uploaded_variant.url
                             if is_object_key(ref_url):
                                 ref_image_path = ref_url
-                                logger.info(f"Reverse generation: Using uploaded three_views as reference: {ref_url}")
+                                logger.debug(f"Reverse generation: Using uploaded three_views as reference: {ref_url}")
                             else:
                                 local_path = os.path.join("output", ref_url)
                                 if os.path.exists(local_path):
                                     ref_image_path = local_path
-                                    logger.info(f"Reverse generation: Using local three_views as reference: {local_path}")
+                                    logger.debug(f"Reverse generation: Using local three_views as reference: {local_path}")
                     
                     # Check for uploaded headshot
                     if not ref_image_path and character.headshot_asset:
@@ -118,12 +118,12 @@ class AssetGenerator:
                             ref_url = uploaded_variant.url
                             if is_object_key(ref_url):
                                 ref_image_path = ref_url
-                                logger.info(f"Reverse generation: Using uploaded headshot as reference: {ref_url}")
+                                logger.debug(f"Reverse generation: Using uploaded headshot as reference: {ref_url}")
                             else:
                                 local_path = os.path.join("output", ref_url)
                                 if os.path.exists(local_path):
                                     ref_image_path = local_path
-                                    logger.info(f"Reverse generation: Using local headshot as reference: {local_path}")
+                                    logger.debug(f"Reverse generation: Using local headshot as reference: {local_path}")
 
                 # Batch Generation Loop
                 successful_generations = 0
@@ -139,13 +139,13 @@ class AssetGenerator:
                         if ref_image_path:
                             # Override to I2I model when using reference image
                             effective_model_name = i2i_model_name or "wan2.6-image"
-                            logger.info(f"Reverse generation: Using I2I model {effective_model_name} with reference image")
+                            logger.debug(f"Reverse generation: Using I2I model {effective_model_name} with reference image")
                             
                             # Enhance prompt for reverse generation to emphasize reference consistency (only if not already present)
                             reverse_enhancement = "STRICTLY MAINTAIN the SAME character appearance, face, hairstyle, skin tone, and clothing as the reference image. "
                             if reverse_enhancement.strip() not in effective_generation_prompt:
                                 effective_generation_prompt = f"{reverse_enhancement}{generation_prompt}"
-                                logger.info(f"Reverse generation enhanced prompt: {effective_generation_prompt[:100]}...")
+                                logger.debug(f"Reverse generation enhanced prompt: {effective_generation_prompt[:100]}...")
                         
                         self.model.generate(effective_generation_prompt, fullbody_path, ref_image_path=ref_image_path, negative_prompt=negative_prompt, model_name=effective_model_name, size=effective_size)
                         
@@ -174,7 +174,7 @@ class AssetGenerator:
                             character.full_body_image_url = rel_fullbody_path # Legacy sync
                         
                         successful_generations += 1
-                        logger.info(f"Full body variant {i+1}/{batch_size} generated successfully")
+                        logger.debug(f"Full body variant {i+1}/{batch_size} generated successfully")
                         
                         # Add small delay between API calls to avoid rate limiting (except for last one)
                         if i < batch_size - 1:
@@ -191,7 +191,7 @@ class AssetGenerator:
                         if uploader.is_configured:
                             object_key = uploader.upload_file(fullbody_path, sub_path="assets/characters")
                             if object_key:
-                                logger.info(f"Uploaded full body variant {i+1} to OSS: {object_key}")
+                                logger.debug(f"Uploaded full body variant {i+1} to OSS: {object_key}")
                                 variant.url = object_key
                                 if character.full_body_asset.selected_id == variant.id:
                                     character.full_body_image_url = object_key
@@ -231,7 +231,7 @@ class AssetGenerator:
                     )
                     if uploaded_variant:
                         uploaded_reference_url = uploaded_variant.url
-                        logger.info(f"Reverse generation: Will use uploaded headshot as reference for three_view")
+                        logger.debug(f"Reverse generation: Will use uploaded headshot as reference for three_view")
                 
                 elif generation_type == "headshot" and character.three_view_asset:
                     # If generating headshot, check for uploaded three_views
@@ -241,7 +241,7 @@ class AssetGenerator:
                     )
                     if uploaded_variant:
                         uploaded_reference_url = uploaded_variant.url
-                        logger.info(f"Reverse generation: Will use uploaded three_views as reference for headshot")
+                        logger.debug(f"Reverse generation: Will use uploaded three_views as reference for headshot")
                 
                 # Also check own asset type for uploaded source
                 if not uploaded_reference_url:
@@ -253,7 +253,7 @@ class AssetGenerator:
                         )
                         if uploaded_variant:
                             uploaded_reference_url = uploaded_variant.url
-                            logger.info(f"Reverse generation: Will use own uploaded image as reference")
+                            logger.debug(f"Reverse generation: Will use own uploaded image as reference")
 
             if generation_type in ["three_view", "headshot"] and not current_full_body_url and not uploaded_reference_url:
                 raise ValueError("Full body image is required to generate derived assets. Upload an image or generate a full body first.")
@@ -265,11 +265,11 @@ class AssetGenerator:
                 if is_object_key(reference_url):
                     # OSS Object Key - pass directly, image.py will handle signing
                     fullbody_path = reference_url
-                    logger.info(f"Using OSS Object Key for reference: {reference_url}")
+                    logger.debug(f"Using OSS Object Key for reference: {reference_url}")
                 else:
                     # Local relative path - prepend output directory
                     fullbody_path = os.path.join("output", reference_url)
-                    logger.info(f"Using local path for reference: {fullbody_path}")
+                    logger.debug(f"Using local path for reference: {fullbody_path}")
             else:
                 fullbody_path = None
 
@@ -321,7 +321,7 @@ class AssetGenerator:
                             character.image_url = rel_sheet_path # Legacy mapping
                         
                         successful_generations += 1
-                        logger.info(f"Three view variant {i+1}/{batch_size} generated successfully")
+                        logger.debug(f"Three view variant {i+1}/{batch_size} generated successfully")
                         
                         if i < batch_size - 1:
                             time.sleep(1)
@@ -336,7 +336,7 @@ class AssetGenerator:
                         if uploader.is_configured:
                             object_key = uploader.upload_file(sheet_path, sub_path="assets/characters")
                             if object_key:
-                                logger.info(f"Uploaded three view variant {i+1} to OSS: {object_key}")
+                                logger.debug(f"Uploaded three view variant {i+1} to OSS: {object_key}")
                                 variant.url = object_key
                                 if character.three_view_asset.selected_id == variant.id:
                                     character.three_view_image_url = object_key
@@ -397,7 +397,7 @@ class AssetGenerator:
                             character.avatar_url = rel_avatar_path # Legacy mapping
                         
                         successful_generations += 1
-                        logger.info(f"Headshot variant {i+1}/{batch_size} generated successfully")
+                        logger.debug(f"Headshot variant {i+1}/{batch_size} generated successfully")
                         
                         if i < batch_size - 1:
                             time.sleep(1)
@@ -412,7 +412,7 @@ class AssetGenerator:
                         if uploader.is_configured:
                             object_key = uploader.upload_file(avatar_path, sub_path="assets/characters")
                             if object_key:
-                                logger.info(f"Uploaded headshot variant {i+1} to OSS: {object_key}")
+                                logger.debug(f"Uploaded headshot variant {i+1} to OSS: {object_key}")
                                 variant.url = object_key
                                 if character.headshot_asset.selected_id == variant.id:
                                     character.headshot_image_url = object_key
@@ -490,7 +490,7 @@ class AssetGenerator:
                     if uploader.is_configured:
                         object_key = uploader.upload_file(output_path, sub_path="assets/scenes")
                         if object_key:
-                            logger.info(f"Uploaded scene variant to OSS: {object_key}")
+                            logger.debug(f"Uploaded scene variant to OSS: {object_key}")
                             variant.url = object_key
                             if scene.image_asset.selected_id == variant.id:
                                 scene.image_url = object_key
@@ -552,7 +552,7 @@ class AssetGenerator:
                     if uploader.is_configured:
                         object_key = uploader.upload_file(output_path, sub_path="assets/props")
                         if object_key:
-                            logger.info(f"Uploaded prop variant to OSS: {object_key}")
+                            logger.debug(f"Uploaded prop variant to OSS: {object_key}")
                             variant.url = object_key
                             if prop.image_asset.selected_id == variant.id:
                                 prop.image_url = object_key

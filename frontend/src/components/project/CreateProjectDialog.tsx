@@ -4,7 +4,7 @@ import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { X } from "lucide-react";
 import { useProjectStore } from "@/store/projectStore";
-import { useRouter } from "next/navigation";
+
 
 interface CreateProjectDialogProps {
     isOpen: boolean;
@@ -16,11 +16,11 @@ export default function CreateProjectDialog({ isOpen, onClose }: CreateProjectDi
     const [text, setText] = useState("");
     const [isCreating, setIsCreating] = useState(false);
     const createProject = useProjectStore((state) => state.createProject);
-    const router = useRouter();
+
 
     const handleCreate = async () => {
-        if (!title || !text) {
-            alert("请填写项目标题和脚本内容");
+        if (!title) {
+            alert("请填写项目标题");
             return;
         }
 
@@ -30,7 +30,8 @@ export default function CreateProjectDialog({ isOpen, onClose }: CreateProjectDi
             // Get the newly created project
             const currentProject = useProjectStore.getState().currentProject;
             if (currentProject) {
-                router.push(`/project/${currentProject.id}`);
+                // Use hash-based routing to match the app's routing structure
+                window.location.hash = `#/project/${currentProject.id}`;
             }
             onClose();
         } catch (error: any) {
@@ -104,7 +105,7 @@ export default function CreateProjectDialog({ isOpen, onClose }: CreateProjectDi
                                 </button>
                                 <button
                                     onClick={handleCreate}
-                                    disabled={isCreating || !title || !text}
+                                    disabled={isCreating || !title}
                                     className="flex-1 bg-primary hover:bg-primary/90 text-white px-6 py-3 rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                                 >
                                     {isCreating ? "创建中..." : "创建项目"}

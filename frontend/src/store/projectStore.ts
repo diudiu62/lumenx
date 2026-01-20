@@ -165,43 +165,7 @@ export const ASPECT_RATIOS = [
     { id: '1:1', name: '1:1', description: 'Square (1024*1024)' },
 ];
 
-export const DEFAULT_STYLES: StylePreset[] = [
-    {
-        id: "Cinematic",
-        name: "Cinematic Realism",
-        color: "from-blue-500 to-purple-500",
-        prompt: "cinematic lighting, movie still, 8k, highly detailed, realistic",
-        negative_prompt: "cartoon, anime, illustration, painting, drawing, low quality, bad anatomy, bad hands, text, error, missing fingers, extra digit, fewer digits, cropped, worst quality, low quality, normal quality, jpeg artifacts, signature, watermark, username, blurry"
-    },
-    {
-        id: "Cyberpunk",
-        name: "Cyberpunk Neon",
-        color: "from-pink-500 to-cyan-500",
-        prompt: "cyberpunk style, neon lights, futuristic, high tech, dark atmosphere",
-        negative_prompt: "natural, rustic, vintage, low quality, bad anatomy, bad hands, text, error, missing fingers, extra digit, fewer digits, cropped, worst quality, low quality, normal quality, jpeg artifacts, signature, watermark, username, blurry"
-    },
-    {
-        id: "Anime",
-        name: "Japanese Anime",
-        color: "from-orange-400 to-red-500",
-        prompt: "anime style, cel shaded, vibrant colors, studio ghibli style",
-        negative_prompt: "photorealistic, 3d, realistic, low quality, bad anatomy, bad hands, text, error, missing fingers, extra digit, fewer digits, cropped, worst quality, low quality, normal quality, jpeg artifacts, signature, watermark, username, blurry"
-    },
-    {
-        id: "Watercolor",
-        name: "Soft Watercolor",
-        color: "from-green-400 to-teal-500",
-        prompt: "watercolor painting, soft edges, artistic, pastel colors",
-        negative_prompt: "sharp lines, photorealistic, 3d, low quality, bad anatomy, bad hands, text, error, missing fingers, extra digit, fewer digits, cropped, worst quality, low quality, normal quality, jpeg artifacts, signature, watermark, username, blurry"
-    },
-    {
-        id: "B&W Manga",
-        name: "B&W Manga",
-        color: "from-gray-700 to-gray-900",
-        prompt: "black and white manga style, ink lines, screen tones, comic book",
-        negative_prompt: "color, 3d, photorealistic, low quality, bad anatomy, bad hands, text, error, missing fingers, extra digit, fewer digits, cropped, worst quality, low quality, normal quality, jpeg artifacts, signature, watermark, username, blurry"
-    },
-];
+
 
 export interface Project {
     id: string;
@@ -229,9 +193,7 @@ interface ProjectStore {
     isAnalyzing: boolean;
     isAnalyzingArtStyle: boolean;
 
-    // Global Style State
-    styles: StylePreset[];
-    selectedStyleId: string;
+
 
     // Global Selection State
     selectedFrameId: string | null;
@@ -247,10 +209,7 @@ interface ProjectStore {
     deleteProject: (id: string) => Promise<void>;
     clearCurrentProject: () => void;
 
-    // Style Actions
-    setStyles: (styles: StylePreset[]) => void;
-    updateStylePrompt: (id: string, prompt: string) => void;
-    setSelectedStyleId: (id: string) => void;
+
 
     // Selection Actions
     // Selection Actions
@@ -274,8 +233,6 @@ export const useProjectStore = create<ProjectStore>()(
             currentProject: null,
             isLoading: false,
             isAnalyzing: false,
-            styles: DEFAULT_STYLES,
-            selectedStyleId: "Cinematic",
             selectedFrameId: null,
 
             // Sync projects from backend
@@ -446,13 +403,7 @@ export const useProjectStore = create<ProjectStore>()(
                 set({ currentProject: null });
             },
 
-            setStyles: (styles) => set({ styles }),
 
-            updateStylePrompt: (id, prompt) => set((state) => ({
-                styles: state.styles.map(s => s.id === id ? { ...s, prompt } : s)
-            })),
-
-            setSelectedStyleId: (id) => set({ selectedStyleId: id }),
 
             setSelectedFrameId: (id) => set({ selectedFrameId: id }),
 
@@ -482,8 +433,7 @@ export const useProjectStore = create<ProjectStore>()(
             name: 'project-storage',
             partialize: (state) => ({
                 projects: state.projects,
-                styles: state.styles,
-                selectedStyleId: state.selectedStyleId,
+
                 generatingTasks: state.generatingTasks // Now persisting this to maintain state across refreshes
             }),
         }

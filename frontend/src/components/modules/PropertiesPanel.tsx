@@ -89,6 +89,10 @@ function ScriptInspector({ project }: { project: any }) {
                     placeholder="Jot down ideas here..."
                 />
             </div>
+
+            <div className="pt-4 border-t border-white/10">
+                <ArtDirectionStyleDisplay project={project} />
+            </div>
         </div>
     );
 }
@@ -205,52 +209,62 @@ function AssetsInspector({ project }: { project: any }) {
             </div>
 
             {/* Art Direction Style Display (Read-only) */}
-            <div className="space-y-4 pt-4 border-t border-white/10">
-                <div className="flex items-center gap-2 mb-2">
-                    <Paintbrush className="text-primary" size={14} />
-                    <h3 className="font-bold text-white text-xs">Art Direction Style</h3>
-                </div>
+            <div className="pt-4 border-t border-white/10">
+                <ArtDirectionStyleDisplay project={currentProject} />
+            </div>
+        </div>
+    );
+}
 
-                {artDirectionStyle ? (
-                    <div className="space-y-3">
-                        <div>
-                            <label className="text-[10px] font-bold text-gray-500 uppercase mb-1.5 block">Style Name</label>
-                            <div className="text-xs font-bold text-white bg-gradient-to-r from-blue-500/20 to-purple-500/20 p-2.5 rounded-lg border border-white/10">
-                                {artDirectionStyle.name}
-                            </div>
-                        </div>
+function ArtDirectionStyleDisplay({ project }: { project: any }) {
+    const artDirectionStyle = project?.art_direction?.style_config;
 
-                        <div>
-                            <label className="text-[10px] font-bold text-gray-500 uppercase mb-1.5 block">Positive Prompt</label>
-                            <div className="bg-black/40 border border-white/5 rounded-lg p-2.5 text-[10px] text-gray-400 leading-relaxed max-h-20 overflow-y-auto">
-                                {artDirectionStyle.positive_prompt || 'No positive prompt defined'}
-                            </div>
-                        </div>
+    return (
+        <div className="space-y-4">
+            <div className="flex items-center gap-2 mb-2">
+                <Paintbrush className="text-primary" size={14} />
+                <h3 className="font-bold text-white text-xs">Art Direction Style</h3>
+            </div>
 
-                        {artDirectionStyle.negative_prompt && (
-                            <div>
-                                <label className="text-[10px] font-bold text-gray-500 uppercase mb-1.5 block">Negative Prompt</label>
-                                <div className="bg-black/40 border border-white/5 rounded-lg p-2.5 text-[10px] text-gray-400 leading-relaxed max-h-16 overflow-y-auto">
-                                    {artDirectionStyle.negative_prompt}
-                                </div>
-                            </div>
-                        )}
-
-                        <div className="pt-2">
-                            <p className="text-[9px] text-gray-500 leading-relaxed">
-                                💡 Tip: Edit style in Step 2 (Art Direction)
-                            </p>
+            {artDirectionStyle ? (
+                <div className="space-y-3">
+                    <div>
+                        <label className="text-[10px] font-bold text-gray-500 uppercase mb-1.5 block">Style Name</label>
+                        <div className="text-xs font-bold text-white bg-gradient-to-r from-blue-500/20 to-purple-500/20 p-2.5 rounded-lg border border-white/10">
+                            {artDirectionStyle.name}
                         </div>
                     </div>
-                ) : (
-                    <div className="bg-white/5 border border-white/10 rounded-lg p-3 text-center">
-                        <p className="text-xs text-gray-500 mb-2">No style configured</p>
-                        <p className="text-[9px] text-gray-600">
-                            Go to Step 2 (Art Direction) to set up your project's visual style
+
+                    <div>
+                        <label className="text-[10px] font-bold text-gray-500 uppercase mb-1.5 block">Positive Prompt</label>
+                        <div className="bg-black/40 border border-white/5 rounded-lg p-2.5 text-[10px] text-gray-400 leading-relaxed max-h-20 overflow-y-auto">
+                            {artDirectionStyle.positive_prompt || 'No positive prompt defined'}
+                        </div>
+                    </div>
+
+                    {artDirectionStyle.negative_prompt && (
+                        <div>
+                            <label className="text-[10px] font-bold text-gray-500 uppercase mb-1.5 block">Negative Prompt</label>
+                            <div className="bg-black/40 border border-white/5 rounded-lg p-2.5 text-[10px] text-gray-400 leading-relaxed max-h-16 overflow-y-auto">
+                                {artDirectionStyle.negative_prompt}
+                            </div>
+                        </div>
+                    )}
+
+                    <div className="pt-2">
+                        <p className="text-[9px] text-gray-500 leading-relaxed">
+                            💡 Tip: Edit style in Step 2 (Art Direction)
                         </p>
                     </div>
-                )}
-            </div>
+                </div>
+            ) : (
+                <div className="bg-white/5 border border-white/10 rounded-lg p-3 text-center">
+                    <p className="text-xs text-gray-500 mb-2">No style configured</p>
+                    <p className="text-[9px] text-gray-600">
+                        Go to Step 2 (Art Direction) to set up your project's visual style
+                    </p>
+                </div>
+            )}
         </div>
     );
 }
@@ -345,7 +359,8 @@ function StoryboardInspector() {
         updateFrame({ character_ids: newIds });
     };
 
-    const [polishedPrompts, setPolishedPrompts] = useState<Record<string, string>>({});
+    // State for bilingual polish results
+    const [polishedPrompts, setPolishedPrompts] = useState<Record<string, { cn: string; en: string }>>({});
     const [isPolishing, setIsPolishing] = useState(false);
 
     const polishedPrompt = selectedFrame ? polishedPrompts[selectedFrame.id] : null;
@@ -376,11 +391,12 @@ function StoryboardInspector() {
         const draft = selectedFrame.image_prompt || selectedFrame.action_description;
 
         try {
-            const res = await api.polishPrompt(draft, assets);
-            if (res.polished_prompt) {
+            // Use new bilingual refine API
+            const res = await api.refineFramePrompt(currentProject.id, selectedFrame.id, draft, assets);
+            if (res.prompt_cn && res.prompt_en) {
                 setPolishedPrompts(prev => ({
                     ...prev,
-                    [selectedFrame.id]: res.polished_prompt
+                    [selectedFrame.id]: { cn: res.prompt_cn, en: res.prompt_en }
                 }));
             }
         } catch (err) {
@@ -666,46 +682,88 @@ function StoryboardInspector() {
                     placeholder="Full image generation prompt..."
                 />
 
-                {/* Polished Result Display */}
+                {/* Polished Result Display - Bilingual */}
                 {polishedPrompt && (
                     <motion.div
                         initial={{ opacity: 0, y: -10 }}
                         animate={{ opacity: 1, y: 0 }}
                         exit={{ opacity: 0, y: -10 }}
-                        className="bg-purple-900/20 border border-purple-500/30 rounded-lg p-3 mt-2"
+                        className="bg-purple-900/20 border border-purple-500/30 rounded-lg p-3 mt-2 space-y-3"
                     >
-                        <div className="flex justify-between items-start mb-2">
+                        <div className="flex justify-between items-start">
                             <span className="text-xs font-bold text-purple-400 flex items-center gap-1">
-                                <Wand2 size={12} /> AI Suggestion
+                                <Wand2 size={12} /> AI 双语润色
                             </span>
-                            <div className="flex gap-2">
+                            <button
+                                onClick={() => {
+                                    setPolishedPrompts(prev => {
+                                        const newState = { ...prev };
+                                        delete newState[selectedFrame.id];
+                                        return newState;
+                                    });
+                                }}
+                                className="text-[10px] text-gray-400 hover:text-white"
+                            >
+                                ✕
+                            </button>
+                        </div>
+
+                        {/* Chinese Prompt */}
+                        <div className="space-y-1">
+                            <div className="flex justify-between items-center">
+                                <span className="text-[10px] font-bold text-gray-500 uppercase">中文 (预览)</span>
                                 <button
                                     onClick={() => {
-                                        navigator.clipboard.writeText(polishedPrompt);
-                                        alert("Copied to clipboard");
+                                        navigator.clipboard.writeText(polishedPrompt.cn);
+                                        alert("中文提示词已复制");
                                     }}
-                                    className="text-[10px] text-gray-400 hover:text-white bg-black/20 px-2 py-1 rounded"
+                                    className="text-[10px] text-gray-400 hover:text-white bg-black/20 px-2 py-0.5 rounded"
                                 >
-                                    Copy
-                                </button>
-                                <button
-                                    onClick={() => {
-                                        updateFrame({ image_prompt: polishedPrompt });
-                                        setPolishedPrompts(prev => {
-                                            const newState = { ...prev };
-                                            delete newState[selectedFrame.id];
-                                            return newState;
-                                        });
-                                    }}
-                                    className="text-[10px] text-white bg-purple-600 hover:bg-purple-500 px-2 py-1 rounded font-bold"
-                                >
-                                    Apply
+                                    复制
                                 </button>
                             </div>
+                            <p className="text-xs text-gray-300 leading-relaxed whitespace-pre-wrap bg-black/20 p-2 rounded">
+                                {polishedPrompt.cn}
+                            </p>
                         </div>
-                        <p className="text-xs text-gray-300 leading-relaxed whitespace-pre-wrap">
-                            {polishedPrompt}
-                        </p>
+
+                        {/* English Prompt */}
+                        <div className="space-y-1">
+                            <div className="flex justify-between items-center">
+                                <span className="text-[10px] font-bold text-gray-500 uppercase">English (生图用)</span>
+                                <div className="flex gap-1">
+                                    <button
+                                        onClick={() => {
+                                            navigator.clipboard.writeText(polishedPrompt.en);
+                                            alert("English prompt copied");
+                                        }}
+                                        className="text-[10px] text-gray-400 hover:text-white bg-black/20 px-2 py-0.5 rounded"
+                                    >
+                                        Copy
+                                    </button>
+                                    <button
+                                        onClick={() => {
+                                            updateFrame({
+                                                image_prompt: polishedPrompt.en,
+                                                image_prompt_cn: polishedPrompt.cn,
+                                                image_prompt_en: polishedPrompt.en
+                                            });
+                                            setPolishedPrompts(prev => {
+                                                const newState = { ...prev };
+                                                delete newState[selectedFrame.id];
+                                                return newState;
+                                            });
+                                        }}
+                                        className="text-[10px] text-white bg-purple-600 hover:bg-purple-500 px-2 py-0.5 rounded font-bold"
+                                    >
+                                        应用
+                                    </button>
+                                </div>
+                            </div>
+                            <p className="text-xs text-gray-300 leading-relaxed whitespace-pre-wrap bg-black/20 p-2 rounded font-mono">
+                                {polishedPrompt.en}
+                            </p>
+                        </div>
                     </motion.div>
                 )}
             </div>
