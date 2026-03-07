@@ -1,11 +1,12 @@
 /** @type {import('next').NextConfig} */
 const isProd = process.env.NODE_ENV === 'production';
+const isDocker = process.env.DOCKER_BUILD === 'true';
 
 const nextConfig = {
     output: isProd ? 'export' : undefined,
-    distDir: isProd ? '../static' : undefined,
-    basePath: isProd ? '/static' : undefined,
-    assetPrefix: isProd ? '/static' : undefined,
+    distDir: isProd ? (isDocker ? 'out' : '../static') : undefined,
+    basePath: isProd && !isDocker ? '/static' : undefined,
+    assetPrefix: isProd && !isDocker ? '/static' : undefined,
     eslint: {
         ignoreDuringBuilds: true,
     },
