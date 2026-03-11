@@ -311,6 +311,16 @@ export const api = {
         return res.data;
     },
 
+    getPromptConfig: async (scriptId: string) => {
+        const res = await axios.get(`${API_URL}/projects/${scriptId}/prompt_config`);
+        return res.data;
+    },
+
+    updatePromptConfig: async (scriptId: string, config: { storyboard_polish?: string; video_polish?: string; r2v_polish?: string }) => {
+        const res = await axios.put(`${API_URL}/projects/${scriptId}/prompt_config`, config);
+        return res.data;
+    },
+
     selectVideo: async (scriptId: string, frameId: string, videoId: string) => {
         const res = await axios.post(`${API_URL}/projects/${scriptId}/frames/${frameId}/select_video`, {
             video_id: videoId
@@ -347,18 +357,20 @@ export const api = {
     },
 
     // NOTE: polishPrompt removed - use refineFramePrompt for storyboard prompts
-    polishVideoPrompt: async (draftPrompt: string, feedback: string = "") => {
+    polishVideoPrompt: async (draftPrompt: string, feedback: string = "", scriptId: string = "") => {
         const res = await axios.post(`${API_URL}/video/polish_prompt`, {
             draft_prompt: draftPrompt,
-            feedback: feedback
+            feedback: feedback,
+            script_id: scriptId,
         });
         return res.data;
     },
-    polishR2VPrompt: async (draftPrompt: string, slots: { description: string }[], feedback: string = "") => {
+    polishR2VPrompt: async (draftPrompt: string, slots: { description: string }[], feedback: string = "", scriptId: string = "") => {
         const res = await axios.post(`${API_URL}/video/polish_r2v_prompt`, {
             draft_prompt: draftPrompt,
             slots: slots,
-            feedback: feedback
+            feedback: feedback,
+            script_id: scriptId,
         });
         return res.data;
     },

@@ -13,8 +13,8 @@ import uuid
 import logging
 import traceback
 from .pipeline import ComicGenPipeline
-from .models import Script, VideoTask
-from .llm import ScriptProcessor
+from .models import Script, VideoTask, PromptConfig
+from .llm import ScriptProcessor, DEFAULT_STORYBOARD_POLISH_PROMPT, DEFAULT_VIDEO_POLISH_PROMPT, DEFAULT_R2V_POLISH_PROMPT
 from ...utils.oss_utils import OSSImageUploader, sign_oss_urls_in_data
 from ...utils import setup_logging
 from fastapi.responses import JSONResponse
@@ -652,7 +652,7 @@ async def refine_storyboard_prompt(script_id: str, request: RefinePromptRequest)
             request.frame_id,
             request.raw_prompt,
             request.assets,
-            request.feedback
+            request.feedback,
         )
         return result
     except ValueError as e:
@@ -1078,6 +1078,55 @@ async def update_model_settings(script_id: str, request: UpdateModelSettingsRequ
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
+class UpdatePromptConfigRequest(BaseModel):
+    storyboard_polish: str = ""
+    video_polish: str = ""
+    r2v_polish: str = ""
+
+
+@app.get("/projects/{script_id}/prompt_config")
+async def get_prompt_config(script_id: str):
+    """Returns project prompt_config and system default prompts for reference."""
+    try:
+        script = pipeline.get_script(script_id)
+        if not script:
+            raise HTTPException(status_code=404, detail="Project not found")
+        config = script.prompt_config if hasattr(script, 'prompt_config') else PromptConfig()
+        return {
+            "prompt_config": config.model_dump(),
+            "defaults": {
+                "storyboard_polish": DEFAULT_STORYBOARD_POLISH_PROMPT,
+                "video_polish": DEFAULT_VIDEO_POLISH_PROMPT,
+                "r2v_polish": DEFAULT_R2V_POLISH_PROMPT,
+            }
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.put("/projects/{script_id}/prompt_config")
+async def update_prompt_config(script_id: str, request: UpdatePromptConfigRequest):
+    """Updates project custom prompt configuration. Empty string = use system default."""
+    try:
+        script = pipeline.get_script(script_id)
+        if not script:
+            raise HTTPException(status_code=404, detail="Project not found")
+        script.prompt_config = PromptConfig(
+            storyboard_polish=request.storyboard_polish,
+            video_polish=request.video_polish,
+            r2v_polish=request.r2v_polish,
+        )
+        pipeline._save_data()
+        return {"prompt_config": script.prompt_config.model_dump()}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 class BindVoiceRequest(BaseModel):
     voice_id: str
     voice_name: str
@@ -1442,14 +1491,20 @@ async def get_style_presets():
 class PolishVideoPromptRequest(BaseModel):
     draft_prompt: str
     feedback: str = Field("", max_length=2000)  # User feedback for iterative refinement
+    script_id: str = ""  # Optional: project ID to load custom prompt config
 
 
 @app.post("/video/polish_prompt")
 async def polish_video_prompt(request: PolishVideoPromptRequest):
     """Polishes a video generation prompt using LLM. Returns bilingual prompts."""
     try:
+        custom_prompt = ""
+        if request.script_id:
+            script = pipeline.get_script(request.script_id)
+            if script and hasattr(script, 'prompt_config'):
+                custom_prompt = script.prompt_config.video_polish
         processor = ScriptProcessor()
-        result = processor.polish_video_prompt(request.draft_prompt, request.feedback)
+        result = processor.polish_video_prompt(request.draft_prompt, request.feedback, custom_prompt)
         return {
             "prompt_cn": result.get("prompt_cn", ""),
             "prompt_en": result.get("prompt_en", "")
@@ -1468,15 +1523,21 @@ class PolishR2VPromptRequest(BaseModel):
     draft_prompt: str
     slots: List[RefSlot]
     feedback: str = Field("", max_length=2000)  # User feedback for iterative refinement
+    script_id: str = ""  # Optional: project ID to load custom prompt config
 
 
 @app.post("/video/polish_r2v_prompt")
 async def polish_r2v_prompt(request: PolishR2VPromptRequest):
     """Polishes a R2V (Reference-to-Video) prompt using LLM. Returns bilingual prompts."""
     try:
+        custom_prompt = ""
+        if request.script_id:
+            script = pipeline.get_script(request.script_id)
+            if script and hasattr(script, 'prompt_config'):
+                custom_prompt = script.prompt_config.r2v_polish
         processor = ScriptProcessor()
         slot_info = [{"description": s.description} for s in request.slots]
-        result = processor.polish_r2v_prompt(request.draft_prompt, slot_info, request.feedback)
+        result = processor.polish_r2v_prompt(request.draft_prompt, slot_info, request.feedback, custom_prompt)
         return {
             "prompt_cn": result.get("prompt_cn", ""),
             "prompt_en": result.get("prompt_en", "")

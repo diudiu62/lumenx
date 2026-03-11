@@ -878,8 +878,13 @@ class ComicGenPipeline:
 
         logger.debug(f"Refining prompt for frame {frame_id}")
 
+        # Read custom prompt config if available
+        custom_prompt = ""
+        if hasattr(script, 'prompt_config') and script.prompt_config.storyboard_polish.strip():
+            custom_prompt = script.prompt_config.storyboard_polish
+
         # Call LLM to refine prompt
-        result = self.script_processor.polish_storyboard_prompt(raw_prompt, assets, feedback)
+        result = self.script_processor.polish_storyboard_prompt(raw_prompt, assets, feedback, custom_prompt)
         
         # Find and update the frame
         frame_found = False

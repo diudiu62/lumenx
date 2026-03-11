@@ -244,6 +244,12 @@ class ArtDirection(BaseModel):
     custom_styles: List[Dict[str, Any]] = Field(default_factory=list, description="User-created custom styles")
     ai_recommendations: List[Dict[str, Any]] = Field(default_factory=list, description="AI recommended styles")
 
+class PromptConfig(BaseModel):
+    """Custom system prompts for polish/refine stages. Empty string = use system default."""
+    storyboard_polish: str = Field("", description="Custom system prompt for storyboard polish (Prompt C)")
+    video_polish: str = Field("", description="Custom system prompt for video I2V polish (Prompt D)")
+    r2v_polish: str = Field("", description="Custom system prompt for video R2V polish (Prompt E)")
+
 class Script(BaseModel):
     id: str = Field(..., description="Unique identifier for the script project")
     title: str = Field(..., description="Title of the comic/video")
@@ -264,6 +270,9 @@ class Script(BaseModel):
     
     # Model Settings for each generation stage
     model_settings: ModelSettings = Field(default_factory=ModelSettings, description="Model selection for T2I/I2I/I2V")
+
+    # Custom prompt configuration for polish stages
+    prompt_config: PromptConfig = Field(default_factory=PromptConfig, description="Custom system prompts for polish stages")
     
     # Merged video URL
     merged_video_url: Optional[str] = Field(None, description="URL of the merged final video")

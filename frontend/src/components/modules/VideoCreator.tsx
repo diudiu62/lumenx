@@ -159,6 +159,7 @@ export default function VideoCreator({ onTaskCreated, remixData, onRemixClear, p
         setIsPolishing(true);
         try {
             let res;
+            const scriptId = currentProject?.id || "";
             if (generationMode === 'r2v') {
                 // R2V mode: use R2V-specific polish with slot info
                 const slotInfo = castSlots
@@ -166,10 +167,10 @@ export default function VideoCreator({ onTaskCreated, remixData, onRemixClear, p
                     .map((slot) => ({
                         description: slot.name || 'Unknown character'
                     }));
-                res = await api.polishR2VPrompt(draftPrompt, slotInfo, feedback);
+                res = await api.polishR2VPrompt(draftPrompt, slotInfo, feedback, scriptId);
             } else {
                 // I2V mode: use video polish
-                res = await api.polishVideoPrompt(draftPrompt, feedback);
+                res = await api.polishVideoPrompt(draftPrompt, feedback, scriptId);
             }
             if (res.prompt_cn && res.prompt_en) {
                 setPolishedPrompt({ cn: res.prompt_cn, en: res.prompt_en });

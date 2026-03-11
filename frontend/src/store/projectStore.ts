@@ -266,6 +266,12 @@ export const GRID_COLS_CLASS: Record<number, string> = {
     5: 'grid-cols-5',
 };
 
+export interface PromptConfig {
+    storyboard_polish: string;
+    video_polish: string;
+    r2v_polish: string;
+}
+
 export interface Project {
     id: string;
     title: string;
@@ -282,6 +288,7 @@ export interface Project {
     style_preset?: string;
     art_direction?: ArtDirection;
     model_settings?: ModelSettings;
+    prompt_config?: PromptConfig;
     merged_video_url?: string;
 }
 

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { ChevronLeft, FileText, Palette, Layout, Film, Share2, Mic, Music, BookOpen, Users, Video, ArrowLeft, Settings, Key } from "lucide-react";
+import { ChevronLeft, FileText, Palette, Layout, Film, Share2, Mic, Music, BookOpen, Users, Video, ArrowLeft, Settings, Key, MessageSquareCode } from "lucide-react";
 import { useProjectStore } from "@/store/projectStore";
 import PipelineSidebar from "@/components/layout/PipelineSidebar";
 import PropertiesPanel from "@/components/modules/PropertiesPanel";
@@ -19,6 +19,7 @@ import FinalMixStudio from "@/components/modules/FinalMixStudio";
 import ExportStudio from "@/components/modules/ExportStudio";
 import ModelSettingsModal from "@/components/common/ModelSettingsModal";
 import EnvConfigDialog from "@/components/project/EnvConfigDialog";
+import PromptConfigModal from "@/components/project/PromptConfigModal";
 import dynamic from "next/dynamic";
 
 const CreativeCanvas = dynamic(() => import("@/components/canvas/CreativeCanvas"), { ssr: false });
@@ -27,6 +28,7 @@ export default function ProjectClient({ id }: { id: string }) {
     const [activeStep, setActiveStep] = useState("script");
     const [modelSettingsOpen, setModelSettingsOpen] = useState(false);
     const [envDialogOpen, setEnvDialogOpen] = useState(false);
+    const [promptConfigOpen, setPromptConfigOpen] = useState(false);
 
     const selectProject = useProjectStore((state) => state.selectProject);
     const currentProject = useProjectStore((state) => state.currentProject);
@@ -97,6 +99,13 @@ export default function ProjectClient({ id }: { id: string }) {
                             <Key size={18} className="text-gray-400 group-hover:text-green-400 transition-colors" />
                         </button>
                         <button
+                            onClick={() => setPromptConfigOpen(true)}
+                            className="p-2 hover:bg-white/10 rounded-lg transition-colors group"
+                            title="Prompt Configuration"
+                        >
+                            <MessageSquareCode size={18} className="text-gray-400 group-hover:text-purple-400 transition-colors" />
+                        </button>
+                        <button
                             onClick={() => setModelSettingsOpen(true)}
                             className="p-2 hover:bg-white/10 rounded-lg transition-colors group"
                             title="Model Settings"
@@ -117,6 +126,12 @@ export default function ProjectClient({ id }: { id: string }) {
             <ModelSettingsModal
                 isOpen={modelSettingsOpen}
                 onClose={() => setModelSettingsOpen(false)}
+            />
+
+            {/* Prompt Config Modal */}
+            <PromptConfigModal
+                isOpen={promptConfigOpen}
+                onClose={() => setPromptConfigOpen(false)}
             />
 
             {/* Environment Config Dialog */}
