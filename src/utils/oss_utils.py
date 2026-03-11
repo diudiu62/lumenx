@@ -221,8 +221,12 @@ class OSSImageUploader:
                 if now - timestamp < (expires - 600):
                     return cached_url
 
-            url = self.bucket.sign_url('GET', object_key, expires)
-            
+            url = self.bucket.sign_url('GET', object_key, expires, slash_safe=True)
+
+            # Ensure HTTPS - some AI APIs (e.g. DashScope wan2.6-i2v) require HTTPS
+            if url.startswith("http://"):
+                url = "https://" + url[7:]
+
             # Update cache
             self._url_cache[cache_key] = (url, now)
             return url
