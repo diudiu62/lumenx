@@ -85,14 +85,30 @@ function applyEndpointChange(config: EnvConfig, envKey: string, value: string): 
 }
 
 /** Mirrors loadConfig() normalization in dialog/settings */
-function normalizeApiResponse(existing: EnvConfig, data: Partial<EnvConfig> & { [key: string]: unknown }): EnvConfig {
+function normalizeApiResponse(existing: EnvConfig, data: { [key: string]: unknown }): EnvConfig {
+  const base = data as Partial<EnvConfig>;
+
+  const klingMode =
+    typeof data.KLING_PROVIDER_MODE === "string" ? data.KLING_PROVIDER_MODE : existing.KLING_PROVIDER_MODE;
+  const viduMode =
+    typeof data.VIDU_PROVIDER_MODE === "string" ? data.VIDU_PROVIDER_MODE : existing.VIDU_PROVIDER_MODE;
+  const pixverseMode =
+    typeof data.PIXVERSE_PROVIDER_MODE === "string"
+      ? data.PIXVERSE_PROVIDER_MODE
+      : existing.PIXVERSE_PROVIDER_MODE;
+
+  const endpointOverrides =
+    typeof data.endpoint_overrides === "object" && data.endpoint_overrides !== null
+      ? (data.endpoint_overrides as Record<string, string>)
+      : existing.endpoint_overrides ?? {};
+
   return {
     ...existing,
-    ...data,
-    KLING_PROVIDER_MODE: normalizeProviderMode(data.KLING_PROVIDER_MODE ?? existing.KLING_PROVIDER_MODE),
-    VIDU_PROVIDER_MODE: normalizeProviderMode(data.VIDU_PROVIDER_MODE ?? existing.VIDU_PROVIDER_MODE),
-    PIXVERSE_PROVIDER_MODE: normalizeProviderMode(data.PIXVERSE_PROVIDER_MODE ?? existing.PIXVERSE_PROVIDER_MODE),
-    endpoint_overrides: data.endpoint_overrides ?? existing.endpoint_overrides ?? {},
+    ...base,
+    KLING_PROVIDER_MODE: normalizeProviderMode(klingMode),
+    VIDU_PROVIDER_MODE: normalizeProviderMode(viduMode),
+    PIXVERSE_PROVIDER_MODE: normalizeProviderMode(pixverseMode),
+    endpoint_overrides: endpointOverrides,
   };
 }
 

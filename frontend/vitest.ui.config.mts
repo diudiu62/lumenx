@@ -6,12 +6,10 @@ export default defineConfig({
         jsx: 'automatic',
     },
     test: {
-        environment: 'node',
+        environment: 'happy-dom',
         include: [
-            'src/__tests__/**/*.test.ts',
-            'src/__tests__/**/*.spec.ts',
-            'src/__tests__/**/*.test.tsx',
-            'src/__tests__/**/*.spec.tsx',
+            'src/components/**/*.test.tsx',
+            'src/components/**/*.spec.tsx',
         ],
         setupFiles: ['./vitest.setup.ts'],
     },
