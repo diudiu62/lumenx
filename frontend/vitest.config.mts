@@ -6,9 +6,8 @@ export default defineConfig({
         jsx: 'automatic',
     },
     test: {
-        environment: 'jsdom',
+        environment: 'node',
         include: ['src/**/*.test.ts', 'src/**/*.spec.ts', 'src/**/*.test.tsx', 'src/**/*.spec.tsx'],
-        setupFiles: ['./vitest.setup.ts'],
     },
     resolve: {
         alias: {
