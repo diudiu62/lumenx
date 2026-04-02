@@ -274,8 +274,17 @@ def resolve_media_input(
         )
     if mode == "kling_vendor_base64_image":
         return _resolve_vendor_kling_image(ref, ref_type, local_path=local_path)
-    if mode.startswith("vidu_vendor_") or mode.startswith("kling_vendor_"):
-        provider_label = "Vidu" if mode.startswith("vidu_vendor_") else "Kling"
+    if (
+        mode.startswith("vidu_vendor_")
+        or mode.startswith("kling_vendor_")
+        or mode.startswith("pixverse_vendor_")
+    ):
+        if mode.startswith("vidu_vendor_"):
+            provider_label = "Vidu"
+        elif mode.startswith("kling_vendor_"):
+            provider_label = "Kling"
+        else:
+            provider_label = "Pixverse"
         return _resolve_vendor_url_mode(
             ref,
             ref_type,

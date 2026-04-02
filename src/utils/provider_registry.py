@@ -123,6 +123,28 @@ DEFAULT_PROVIDER_FAMILIES: Tuple[ProviderFamilyConfig, ...] = (
             "vendor": "vidu_vendor_video_url",
         },
     ),
+    ProviderFamilyConfig(
+        model_family="pixverse-",
+        backend_default="dashscope",
+        backend_env_key="PIXVERSE_PROVIDER_MODE",
+        credential_sources={
+            "dashscope": ("DASHSCOPE_API_KEY",),
+            "vendor": ("PIXVERSE_API_KEY",),
+        },
+        supported_modalities=("t2v", "i2v"),
+        image_input_mode={
+            "dashscope": "dashscope_image_to_video",
+            "vendor": "pixverse_vendor_image_url",
+        },
+        audio_input_mode={
+            "dashscope": "dashscope_temp_file_url",
+            "vendor": "pixverse_vendor_audio_url",
+        },
+        reference_video_input_mode={
+            "dashscope": "dashscope_temp_file_url",
+            "vendor": "pixverse_vendor_video_url",
+        },
+    ),
 )
 
 

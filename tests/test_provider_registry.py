@@ -22,15 +22,29 @@ class TestProviderRegistryRouting:
         assert registry.resolve_backend("vidu2.0") == "dashscope"
         assert registry.resolve_backend("vidu2.0", env={"VIDU_PROVIDER_MODE": ""}) == "dashscope"
 
-    def test_kling_and_vidu_can_route_to_vendor(self):
+    def test_pixverse_defaults_to_dashscope_when_mode_is_unset(self):
+        registry = get_default_provider_registry()
+
+        assert registry.resolve_backend("pixverse-v4-i2v") == "dashscope"
+        assert (
+            registry.resolve_backend(
+                "pixverse-v4-i2v",
+                env={"PIXVERSE_PROVIDER_MODE": ""},
+            )
+            == "dashscope"
+        )
+
+    def test_kling_vidu_and_pixverse_can_route_to_vendor(self):
         registry = get_default_provider_registry()
         env = {
             "KLING_PROVIDER_MODE": "vendor",
             "VIDU_PROVIDER_MODE": "vendor",
+            "PIXVERSE_PROVIDER_MODE": "vendor",
         }
 
         assert registry.resolve_backend("kling-v1", env=env) == "vendor"
         assert registry.resolve_backend("vidu2.0", env=env) == "vendor"
+        assert registry.resolve_backend("pixverse-v4-i2v", env=env) == "vendor"
 
     def test_invalid_provider_mode_falls_back_to_default_backend(self):
         registry = get_default_provider_registry()
