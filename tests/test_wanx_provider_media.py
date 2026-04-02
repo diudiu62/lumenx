@@ -86,12 +86,16 @@ def _install_fake_uploader(monkeypatch, configured: bool):
 
 
 class TestWanxProviderMediaIntegration:
-    def test_i2v_local_image_without_oss_uses_data_uri(self, monkeypatch):
+    def test_i2v_local_image_without_oss_uses_temp_url_and_header(self, monkeypatch):
         monkeypatch.setenv("DASHSCOPE_API_KEY", "test-key")
         _install_fake_uploader(monkeypatch, configured=False)
 
         captured = {}
         _install_fake_requests(monkeypatch, captured)
+        monkeypatch.setattr(
+            "src.models.wanx.WanxModel._create_dashscope_temp_url",
+            lambda self, local_path, model_name: "oss://dashscope-temp/image-001",
+        )
 
         img_path = _write_output_file("uploads/wanx_i2v_local.png", base64.b64decode(PNG_1X1_BASE64))
 
@@ -103,7 +107,8 @@ class TestWanxProviderMediaIntegration:
             model_name="wan2.6-i2v",
         )
 
-        assert captured["create_payload"]["input"]["img_url"].startswith("data:image/png;base64,")
+        assert captured["create_payload"]["input"]["img_url"] == "oss://dashscope-temp/image-001"
+        assert captured["create_headers"]["X-DashScope-OssResourceResolve"] == "enable"
 
     def test_i2v_local_audio_without_oss_uses_temp_url_and_header(self, monkeypatch):
         monkeypatch.setenv("DASHSCOPE_API_KEY", "test-key")
@@ -176,3 +181,51 @@ class TestWanxProviderMediaIntegration:
             captured["create_payload"]["input"]["img_url"]
             == "https://oss.example/lumenx/temp/i2v_input/ref.png"
         )
+
+    def test_create_dashscope_temp_url_calls_policy_and_multipart_upload(self, monkeypatch):
+        monkeypatch.setenv("DASHSCOPE_API_KEY", "test-key")
+        local_path = _write_output_file("uploads/wanx_temp_upload_source.png", b"img-bytes")
+
+        captured = {}
+
+        def fake_get(url, params=None, headers=None, timeout=None):
+            captured["policy_url"] = url
+            captured["policy_params"] = dict(params or {})
+            captured["policy_headers"] = dict(headers or {})
+            return _FakeResponse(
+                200,
+                {
+                    "output": {
+                        "upload_host": "https://upload.example",
+                        "upload_dir": "dashscope-temp/dir",
+                        "policy": "policy-xyz",
+                        "signature": "sig-xyz",
+                        "oss_access_key_id": "ak-xyz",
+                    }
+                },
+            )
+
+        def fake_post(url, data=None, files=None, timeout=None, headers=None, json=None):
+            captured["upload_url"] = url
+            captured["upload_data"] = dict(data or {})
+            captured["upload_file_name"] = files["file"][0] if files else None
+            captured["upload_file_content"] = files["file"][1].read() if files else None
+            return _FakeResponse(204, {})
+
+        monkeypatch.setattr("src.models.wanx.requests.get", fake_get)
+        monkeypatch.setattr("src.models.wanx.requests.post", fake_post)
+
+        model = WanxModel({"params": {}})
+        resolved = model._create_dashscope_temp_url(local_path, "wan2.6-i2v")
+
+        assert resolved == "oss://dashscope-temp/dir/wanx_temp_upload_source.png"
+        assert captured["policy_url"].endswith("/api/v1/uploads")
+        assert captured["policy_params"] == {"action": "getPolicy", "model": "wan2.6-i2v"}
+        assert captured["policy_headers"]["Authorization"] == "Bearer test-key"
+        assert captured["upload_url"] == "https://upload.example"
+        assert captured["upload_data"]["key"] == "dashscope-temp/dir/wanx_temp_upload_source.png"
+        assert captured["upload_data"]["policy"] == "policy-xyz"
+        assert captured["upload_data"]["signature"] == "sig-xyz"
+        assert captured["upload_data"]["OSSAccessKeyId"] == "ak-xyz"
+        assert captured["upload_file_name"] == "wanx_temp_upload_source.png"
+        assert captured["upload_file_content"] == b"img-bytes"

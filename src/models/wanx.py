@@ -34,6 +34,10 @@ class WanxModel(VideoGenModel):
         try:
             return resolve_provider_backend(model_name)
         except (KeyError, ValueError):
+            logger.debug(
+                "Provider backend not registered for model %s, defaulting to dashscope.",
+                model_name,
+            )
             return "dashscope"
         except Exception as e:
             logger.warning(
@@ -201,6 +205,18 @@ class WanxModel(VideoGenModel):
                         uploader=uploader,
                         dashscope_temp_url_resolver=temp_url_resolver,
                     )
+                    # For Wan I2V, keep local no-OSS image inputs URL-based just like audio/video
+                    # (oss:// + X-DashScope-OssResourceResolve), not data URIs.
+                    if resolved_image.value.startswith("data:image/"):
+                        resolved_image = resolve_media_input(
+                            image_ref,
+                            model_name=resolver_model,
+                            modality="reference_video",
+                            backend=backend,
+                            uploader=uploader,
+                            dashscope_temp_url_resolver=temp_url_resolver,
+                        )
+
                     img_url = resolved_image.value
                     self._merge_media_headers(extra_media_headers, resolved_image.headers)
 
